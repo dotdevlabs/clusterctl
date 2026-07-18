@@ -27,5 +27,3 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# goreleaser
-.goreleaser.yaml
