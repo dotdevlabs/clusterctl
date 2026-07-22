@@ -16,9 +16,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/dotdevlabs/clusterctl/internal/version.Version={{.Version}}
-      - -X github.com/dotdevlabs/clusterctl/internal/version.Commit={{.Commit}}
-      - -X github.com/dotdevlabs/clusterctl/internal/version.BuildDate={{.Date}}
+      - -X github.com/dotdevlabs/ctlkit/pkg/version.Version={{.Version}}
+      - -X github.com/dotdevlabs/ctlkit/pkg/version.Commit={{.Commit}}
+      - -X github.com/dotdevlabs/ctlkit/pkg/version.Date={{.Date}}
 
 archives:
   - format: tar.gz
