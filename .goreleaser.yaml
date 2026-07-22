@@ -29,11 +29,22 @@ archives:
         format: zip
 
 brews:
-  - repository:
+  - name: clusterctl
+    repository:
       owner: dotdevlabs
       name: homebrew-tap
-    homepage: https://github.com/dotdevlabs/clusterctl
-    description: Cluster lifecycle management CLI tool
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_message_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: Formula
+    homepage: "https://github.com/dotdevlabs/clusterctl"
+    description: "Cluster lifecycle management CLI tool"
+    install: |
+      bin.install "clusterctl"
+    test: |
+      system "#{bin}/clusterctl", "version"
 
 checksum:
   name_template: checksums.txt
