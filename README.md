@@ -16,6 +16,23 @@ brew install dotdevlabs/tap/clusterctl
 go install github.com/dotdevlabs/clusterctl@latest
 ```
 
+### Install script
+
+Downloads the latest release binary, verifies the checksum, and installs to `/usr/local/bin`:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/dotdevlabs/clusterctl/main/scripts/install.sh | sh
+```
+
+To pin a specific version or change the install directory:
+
+```bash
+VERSION=v0.1.0 INSTALL_DIR=~/.local/bin \
+  curl -sSfL https://raw.githubusercontent.com/dotdevlabs/clusterctl/main/scripts/install.sh | sh
+```
+
+Supports Linux and macOS (amd64/arm64). Windows users should use `go install` or download the `.zip` from the [releases page](https://github.com/dotdevlabs/clusterctl/releases).
+
 ### Download a release
 
 Pre-built binaries for Linux, macOS (Intel + Apple Silicon), and Windows are available on the [releases page](https://github.com/dotdevlabs/clusterctl/releases).
