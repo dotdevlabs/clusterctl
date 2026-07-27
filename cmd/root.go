@@ -54,7 +54,7 @@ func aiWorkflows() []airef.Workflow {
 			Description: "Register a Helm chart as a package, then deploy it to a cluster within a project.",
 			Steps: []string{
 				"clusterctl packages create --name my-chart --source-type helm --source-url https://charts.example.com --source-chart my-chart",
-				"clusterctl deployments create --project-id <project-id> --cluster-id <cluster-id> --package-id <package-id> --package-version 1.0.0",
+				"clusterctl deployments create --project-id <project-id> --cluster-id <cluster-id> --name <deployment-name> --namespace default --package-name <package-name> --package-version 1.0.0",
 				"clusterctl deployments get <deployment-id>",
 			},
 		},

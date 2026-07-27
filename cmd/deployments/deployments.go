@@ -16,9 +16,11 @@ import (
 // Deployment is the API response shape for a deployment resource.
 type Deployment struct {
 	ID             string `json:"id"`
+	Name           string `json:"name,omitempty"`
+	Namespace      string `json:"namespace,omitempty"`
 	ProjectID      string `json:"project_id,omitempty"`
 	ClusterID      string `json:"cluster_id,omitempty"`
-	PackageID      string `json:"package_id,omitempty"`
+	PackageName    string `json:"package_name,omitempty"`
 	PackageVersion string `json:"package_version,omitempty"`
 	ValuesOverride string `json:"values_override,omitempty"`
 	Status         string `json:"status,omitempty"`
@@ -27,15 +29,18 @@ type Deployment struct {
 }
 
 type createDeploymentRequest struct {
+	Name           string `json:"name"`
+	Namespace      string `json:"namespace,omitempty"`
 	ProjectID      string `json:"project_id,omitempty"`
 	ClusterID      string `json:"cluster_id,omitempty"`
-	PackageID      string `json:"package_id,omitempty"`
+	PackageName    string `json:"package_name,omitempty"`
 	PackageVersion string `json:"package_version,omitempty"`
 	ValuesOverride string `json:"values_override,omitempty"`
 }
 
 var deploymentCols = []output.Column{
 	{Header: "ID"},
+	{Header: "NAME"},
 	{Header: "PROJECT"},
 	{Header: "CLUSTER"},
 	{Header: "PACKAGE"},
@@ -43,7 +48,7 @@ var deploymentCols = []output.Column{
 }
 
 func deploymentRow(d Deployment) []string {
-	return []string{d.ID, d.ProjectID, d.ClusterID, d.PackageID, d.Status}
+	return []string{d.ID, d.Name, d.ProjectID, d.ClusterID, d.PackageName, d.Status}
 }
 
 // NewCommand returns the "deployments" cobra.Command with all subcommands attached.
@@ -101,7 +106,7 @@ func newGetCmd() *cobra.Command {
 }
 
 func newCreateCmd() *cobra.Command {
-	var projectID, clusterID, packageID, packageVersion, valuesOverride string
+	var name, namespace, projectID, clusterID, packageName, packageVersion, valuesOverride string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new deployment",
@@ -111,9 +116,11 @@ func newCreateCmd() *cobra.Command {
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
 			body := createDeploymentRequest{
+				Name:           name,
+				Namespace:      namespace,
 				ProjectID:      projectID,
 				ClusterID:      clusterID,
-				PackageID:      packageID,
+				PackageName:    packageName,
 				PackageVersion: packageVersion,
 				ValuesOverride: valuesOverride,
 			}
@@ -127,25 +134,33 @@ func newCreateCmd() *cobra.Command {
 			return renderer.Render(deploymentCols, [][]string{deploymentRow(env.Data)}, env)
 		},
 	}
+	cmd.Flags().StringVar(&name, "name", "", "Deployment name")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "Kubernetes namespace")
 	cmd.Flags().StringVar(&projectID, "project-id", "", "Project ID")
 	cmd.Flags().StringVar(&clusterID, "cluster-id", "", "Cluster ID")
-	cmd.Flags().StringVar(&packageID, "package-id", "", "Package ID")
+	cmd.Flags().StringVar(&packageName, "package-name", "", "Package name")
 	cmd.Flags().StringVar(&packageVersion, "package-version", "", "Package version")
 	cmd.Flags().StringVar(&valuesOverride, "values-override", "", "Values override (YAML/JSON string)")
+	if err := cmd.MarkFlagRequired("name"); err != nil {
+		panic(err)
+	}
+	if err := cmd.MarkFlagRequired("namespace"); err != nil {
+		panic(err)
+	}
 	if err := cmd.MarkFlagRequired("project-id"); err != nil {
 		panic(err)
 	}
 	if err := cmd.MarkFlagRequired("cluster-id"); err != nil {
 		panic(err)
 	}
-	if err := cmd.MarkFlagRequired("package-id"); err != nil {
+	if err := cmd.MarkFlagRequired("package-name"); err != nil {
 		panic(err)
 	}
 	return cmd
 }
 
 func newUpdateCmd() *cobra.Command {
-	var projectID, clusterID, packageID, packageVersion, valuesOverride string
+	var name, namespace, projectID, clusterID, packageName, packageVersion, valuesOverride string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a deployment",
@@ -156,14 +171,20 @@ func newUpdateCmd() *cobra.Command {
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
 			body := map[string]any{}
+			if cmd.Flags().Changed("name") {
+				body["name"] = name
+			}
+			if cmd.Flags().Changed("namespace") {
+				body["namespace"] = namespace
+			}
 			if cmd.Flags().Changed("project-id") {
 				body["project_id"] = projectID
 			}
 			if cmd.Flags().Changed("cluster-id") {
 				body["cluster_id"] = clusterID
 			}
-			if cmd.Flags().Changed("package-id") {
-				body["package_id"] = packageID
+			if cmd.Flags().Changed("package-name") {
+				body["package_name"] = packageName
 			}
 			if cmd.Flags().Changed("package-version") {
 				body["package_version"] = packageVersion
@@ -185,9 +206,11 @@ func newUpdateCmd() *cobra.Command {
 			return renderer.Render(deploymentCols, [][]string{deploymentRow(env.Data)}, env)
 		},
 	}
+	cmd.Flags().StringVar(&name, "name", "", "Deployment name")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "Kubernetes namespace")
 	cmd.Flags().StringVar(&projectID, "project-id", "", "Project ID")
 	cmd.Flags().StringVar(&clusterID, "cluster-id", "", "Cluster ID")
-	cmd.Flags().StringVar(&packageID, "package-id", "", "Package ID")
+	cmd.Flags().StringVar(&packageName, "package-name", "", "Package name")
 	cmd.Flags().StringVar(&packageVersion, "package-version", "", "Package version")
 	cmd.Flags().StringVar(&valuesOverride, "values-override", "", "Values override (YAML/JSON string)")
 	return cmd
