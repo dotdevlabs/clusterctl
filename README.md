@@ -106,9 +106,10 @@ clusterctl packages delete <id>
 ```bash
 clusterctl deployments list
 clusterctl deployments get <id>
-clusterctl deployments create --project-id <id> --cluster-id <id> --package-id <id> \
-  [--package-version <ver>] [--values-override <yaml>]
-clusterctl deployments update <id> [--project-id <id>] [--cluster-id <id>] ...
+clusterctl deployments create --project-id <id> --cluster-id <id> --name <name> \
+  --namespace <namespace> --package-name <name> [--package-version <ver>] [--values-override <yaml>]
+clusterctl deployments update <id> [--project-id <id>] [--cluster-id <id>] [--name <name>] \
+  [--namespace <namespace>] [--package-name <name>] ...
 clusterctl deployments delete <id>
 ```
 
@@ -158,7 +159,9 @@ clusterctl clusters create \
 clusterctl deployments create \
   --project-id abc123 \
   --cluster-id def456 \
-  --package-id ghi789 \
+  --name my-deployment \
+  --namespace default \
+  --package-name promtail \
   --package-version 1.2.0
 
 # Materialize secrets in a project
