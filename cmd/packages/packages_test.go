@@ -56,7 +56,7 @@ func TestNewCommand(t *testing.T) {
 
 func TestList(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":[{"id":"pkg1","name":"mypackage","source_type":"helm"}]}`},
+		{200, `{"data":[{"type":"packages","id":"pkg1","attributes":{"name":"mypackage","source_type":"helm"}}],"links":{}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := packages.NewCommand()
@@ -75,7 +75,7 @@ func TestList(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"id":"pkg1","name":"mypackage","source_type":"helm"}}`},
+		{200, `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"mypackage","source_type":"helm"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := packages.NewCommand()
@@ -94,7 +94,7 @@ func TestGet(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{201, `{"data":{"id":"pkg2","name":"newpkg","source_type":"helm"}}`},
+		{201, `{"data":{"type":"packages","id":"pkg2","attributes":{"name":"newpkg","source_type":"helm"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := packages.NewCommand()

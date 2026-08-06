@@ -26,6 +26,32 @@ type Package struct {
 	UpdatedAt    string `json:"updated_at,omitempty"`
 }
 
+type packageAttrs struct {
+	Name         string `json:"name"`
+	SourceType   string `json:"source_type,omitempty"`
+	SourceURL    string `json:"source_url,omitempty"`
+	SourceBranch string `json:"source_branch,omitempty"`
+	SourcePath   string `json:"source_path,omitempty"`
+	SourceChart  string `json:"source_chart,omitempty"`
+	CreatedAt    string `json:"created_at,omitempty"`
+	UpdatedAt    string `json:"updated_at,omitempty"`
+}
+
+func packageFromResource(r httpclient.Resource[packageAttrs]) Package {
+	a := r.Attributes
+	return Package{
+		ID:           r.ID,
+		Name:         a.Name,
+		SourceType:   a.SourceType,
+		SourceURL:    a.SourceURL,
+		SourceBranch: a.SourceBranch,
+		SourcePath:   a.SourcePath,
+		SourceChart:  a.SourceChart,
+		CreatedAt:    a.CreatedAt,
+		UpdatedAt:    a.UpdatedAt,
+	}
+}
+
 type createPackageRequest struct {
 	Name         string `json:"name"`
 	SourceType   string `json:"source_type,omitempty"`
@@ -69,15 +95,18 @@ func newListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
-			env, err := httpclient.GetEnvelope[[]Package](cmd.Context(), client, "/api/v1/packages")
+			col, err := httpclient.GetJSONAPICollection[packageAttrs](cmd.Context(), client, "/api/v1/packages")
 			if err != nil {
 				return err
 			}
 			var rows [][]string
-			for _, p := range env.Data {
+			var items []Package
+			for _, r := range col.Data {
+				p := packageFromResource(r)
+				items = append(items, p)
 				rows = append(rows, packageRow(p))
 			}
-			return renderer.Render(packageCols, rows, env)
+			return renderer.Render(packageCols, rows, httpclient.Envelope[[]Package]{Data: items})
 		},
 	}
 }
@@ -91,11 +120,12 @@ func newGetCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/packages/" + url.PathEscape(args[0])
-			env, err := httpclient.GetEnvelope[Package](cmd.Context(), client, path)
+			res, err := httpclient.GetJSONAPISingle[packageAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(packageCols, [][]string{packageRow(env.Data)}, env)
+			p := packageFromResource(res)
+			return renderer.Render(packageCols, [][]string{packageRow(p)}, httpclient.Envelope[Package]{Data: p})
 		},
 	}
 }
@@ -121,11 +151,12 @@ func newCreateCmd() *cobra.Command {
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
-			env, err := httpclient.PostEnvelope[Package](cmd.Context(), client, "/api/v1/packages", body)
+			res, err := httpclient.PostJSONAPISingle[packageAttrs](cmd.Context(), client, "/api/v1/packages", body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(packageCols, [][]string{packageRow(env.Data)}, env)
+			p := packageFromResource(res)
+			return renderer.Render(packageCols, [][]string{packageRow(p)}, httpclient.Envelope[Package]{Data: p})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Package name")

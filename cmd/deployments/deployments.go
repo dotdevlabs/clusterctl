@@ -28,6 +28,36 @@ type Deployment struct {
 	UpdatedAt      string `json:"updated_at,omitempty"`
 }
 
+type deploymentAttrs struct {
+	Name           string `json:"name,omitempty"`
+	Namespace      string `json:"namespace,omitempty"`
+	ProjectID      string `json:"project_id,omitempty"`
+	ClusterID      string `json:"cluster_id,omitempty"`
+	PackageName    string `json:"package_name,omitempty"`
+	PackageVersion string `json:"package_version,omitempty"`
+	ValuesOverride string `json:"values_override,omitempty"`
+	Status         string `json:"status,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+}
+
+func deploymentFromResource(r httpclient.Resource[deploymentAttrs]) Deployment {
+	a := r.Attributes
+	return Deployment{
+		ID:             r.ID,
+		Name:           a.Name,
+		Namespace:      a.Namespace,
+		ProjectID:      a.ProjectID,
+		ClusterID:      a.ClusterID,
+		PackageName:    a.PackageName,
+		PackageVersion: a.PackageVersion,
+		ValuesOverride: a.ValuesOverride,
+		Status:         a.Status,
+		CreatedAt:      a.CreatedAt,
+		UpdatedAt:      a.UpdatedAt,
+	}
+}
+
 type createDeploymentRequest struct {
 	Name           string `json:"name"`
 	Namespace      string `json:"namespace,omitempty"`
@@ -74,15 +104,18 @@ func newListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
-			env, err := httpclient.GetEnvelope[[]Deployment](cmd.Context(), client, "/api/v1/deployments")
+			col, err := httpclient.GetJSONAPICollection[deploymentAttrs](cmd.Context(), client, "/api/v1/deployments")
 			if err != nil {
 				return err
 			}
 			var rows [][]string
-			for _, d := range env.Data {
+			var items []Deployment
+			for _, r := range col.Data {
+				d := deploymentFromResource(r)
+				items = append(items, d)
 				rows = append(rows, deploymentRow(d))
 			}
-			return renderer.Render(deploymentCols, rows, env)
+			return renderer.Render(deploymentCols, rows, httpclient.Envelope[[]Deployment]{Data: items})
 		},
 	}
 }
@@ -96,11 +129,12 @@ func newGetCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/deployments/" + url.PathEscape(args[0])
-			env, err := httpclient.GetEnvelope[Deployment](cmd.Context(), client, path)
+			res, err := httpclient.GetJSONAPISingle[deploymentAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(deploymentCols, [][]string{deploymentRow(env.Data)}, env)
+			d := deploymentFromResource(res)
+			return renderer.Render(deploymentCols, [][]string{deploymentRow(d)}, httpclient.Envelope[Deployment]{Data: d})
 		},
 	}
 }
@@ -127,11 +161,12 @@ func newCreateCmd() *cobra.Command {
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
-			env, err := httpclient.PostEnvelope[Deployment](cmd.Context(), client, "/api/v1/deployments", body)
+			res, err := httpclient.PostJSONAPISingle[deploymentAttrs](cmd.Context(), client, "/api/v1/deployments", body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(deploymentCols, [][]string{deploymentRow(env.Data)}, env)
+			d := deploymentFromResource(res)
+			return renderer.Render(deploymentCols, [][]string{deploymentRow(d)}, httpclient.Envelope[Deployment]{Data: d})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Deployment name")

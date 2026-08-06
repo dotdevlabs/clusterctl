@@ -3,7 +3,7 @@ module github.com/dotdevlabs/clusterctl
 go 1.24.5
 
 require (
-	github.com/dotdevlabs/ctlkit v0.0.0-20260721210909-c3e7b5479e1e
+	github.com/dotdevlabs/ctlkit v0.0.0-20260805143707-138a4985f212
 	github.com/spf13/cobra v1.10.2
 )
 
