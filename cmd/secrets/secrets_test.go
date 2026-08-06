@@ -56,7 +56,7 @@ func TestNewCommand(t *testing.T) {
 
 func TestList(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":[{"id":"s1","name":"mysecret","project_id":"p1"}]}`},
+		{200, `{"data":[{"type":"secrets","id":"s1","attributes":{"name":"mysecret","project_id":"p1"}}],"links":{}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := secrets.NewCommand()
@@ -78,7 +78,7 @@ func TestList(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{201, `{"data":{"id":"s2","name":"newsecret","project_id":"p1"}}`},
+		{201, `{"data":{"type":"secrets","id":"s2","attributes":{"name":"newsecret","project_id":"p1"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := secrets.NewCommand()

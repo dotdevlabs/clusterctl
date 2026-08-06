@@ -57,7 +57,7 @@ func TestNewCommand(t *testing.T) {
 
 func TestList(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":[{"id":"d1","name":"my-deploy","project_id":"p1","cluster_id":"c1","package_name":"promtail","status":"deployed"}]}`},
+		{200, `{"data":[{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","project_id":"p1","cluster_id":"c1","package_name":"promtail","status":"deployed"}}],"links":{}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := deployments.NewCommand()
@@ -76,7 +76,7 @@ func TestList(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"id":"d1","name":"my-deploy","project_id":"p1","cluster_id":"c1","package_name":"promtail","status":"deployed"}}`},
+		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","project_id":"p1","cluster_id":"c1","package_name":"promtail","status":"deployed"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := deployments.NewCommand()
@@ -95,7 +95,7 @@ func TestGet(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{201, `{"data":{"id":"d2","name":"my-deploy","project_id":"p1","cluster_id":"c1","namespace":"default","package_name":"promtail","status":"pending"}}`},
+		{201, `{"data":{"type":"deployments","id":"d2","attributes":{"name":"my-deploy","project_id":"p1","cluster_id":"c1","namespace":"default","package_name":"promtail","status":"pending"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := deployments.NewCommand()
@@ -120,7 +120,7 @@ func TestCreate(t *testing.T) {
 
 func TestCreate_RequestBodyShape(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{201, `{"data":{"id":"d3","name":"host-log-collector","namespace":"default","project_id":"p1","cluster_id":"c1","package_name":"promtail","status":"pending"}}`},
+		{201, `{"data":{"type":"deployments","id":"d3","attributes":{"name":"host-log-collector","namespace":"default","project_id":"p1","cluster_id":"c1","package_name":"promtail","status":"pending"}}}`},
 	}}
 	ctx, _ := buildCtx(t, mt, true)
 	parent := deployments.NewCommand()

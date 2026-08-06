@@ -21,6 +21,22 @@ type Secret struct {
 	CreatedAt string `json:"created_at,omitempty"`
 }
 
+type secretAttrs struct {
+	Name      string `json:"name"`
+	ProjectID string `json:"project_id,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+}
+
+func secretFromResource(r httpclient.Resource[secretAttrs]) Secret {
+	a := r.Attributes
+	return Secret{
+		ID:        r.ID,
+		Name:      a.Name,
+		ProjectID: a.ProjectID,
+		CreatedAt: a.CreatedAt,
+	}
+}
+
 type createSecretRequest struct {
 	Name  string `json:"name"`
 	Value string `json:"value,omitempty"`
@@ -65,15 +81,18 @@ func newListCmd(projectID *string) *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/projects/" + url.PathEscape(*projectID) + "/secrets"
-			env, err := httpclient.GetEnvelope[[]Secret](cmd.Context(), client, path)
+			col, err := httpclient.GetJSONAPICollection[secretAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
 			var rows [][]string
-			for _, s := range env.Data {
+			var items []Secret
+			for _, r := range col.Data {
+				s := secretFromResource(r)
+				items = append(items, s)
 				rows = append(rows, secretRow(s))
 			}
-			return renderer.Render(secretCols, rows, env)
+			return renderer.Render(secretCols, rows, httpclient.Envelope[[]Secret]{Data: items})
 		},
 	}
 }
@@ -96,11 +115,12 @@ func newCreateCmd(projectID *string) *cobra.Command {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
 			path := "/api/v1/projects/" + url.PathEscape(*projectID) + "/secrets"
-			env, err := httpclient.PostEnvelope[Secret](cmd.Context(), client, path, body)
+			res, err := httpclient.PostJSONAPISingle[secretAttrs](cmd.Context(), client, path, body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(secretCols, [][]string{secretRow(env.Data)}, env)
+			s := secretFromResource(res)
+			return renderer.Render(secretCols, [][]string{secretRow(s)}, httpclient.Envelope[Secret]{Data: s})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")

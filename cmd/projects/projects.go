@@ -21,6 +21,22 @@ type Project struct {
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
+type projectAttrs struct {
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+func projectFromResource(r httpclient.Resource[projectAttrs]) Project {
+	a := r.Attributes
+	return Project{
+		ID:        r.ID,
+		Name:      a.Name,
+		CreatedAt: a.CreatedAt,
+		UpdatedAt: a.UpdatedAt,
+	}
+}
+
 type createProjectRequest struct {
 	Name string `json:"name"`
 }
@@ -58,15 +74,18 @@ func newListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
-			env, err := httpclient.GetEnvelope[[]Project](cmd.Context(), client, "/api/v1/projects")
+			col, err := httpclient.GetJSONAPICollection[projectAttrs](cmd.Context(), client, "/api/v1/projects")
 			if err != nil {
 				return err
 			}
 			var rows [][]string
-			for _, p := range env.Data {
+			var items []Project
+			for _, r := range col.Data {
+				p := projectFromResource(r)
+				items = append(items, p)
 				rows = append(rows, projectRow(p))
 			}
-			return renderer.Render(projectCols, rows, env)
+			return renderer.Render(projectCols, rows, httpclient.Envelope[[]Project]{Data: items})
 		},
 	}
 }
@@ -80,11 +99,12 @@ func newGetCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/projects/" + url.PathEscape(args[0])
-			env, err := httpclient.GetEnvelope[Project](cmd.Context(), client, path)
+			res, err := httpclient.GetJSONAPISingle[projectAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(projectCols, [][]string{projectRow(env.Data)}, env)
+			p := projectFromResource(res)
+			return renderer.Render(projectCols, [][]string{projectRow(p)}, httpclient.Envelope[Project]{Data: p})
 		},
 	}
 }
@@ -103,11 +123,12 @@ func newCreateCmd() *cobra.Command {
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
-			env, err := httpclient.PostEnvelope[Project](cmd.Context(), client, "/api/v1/projects", body)
+			res, err := httpclient.PostJSONAPISingle[projectAttrs](cmd.Context(), client, "/api/v1/projects", body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(projectCols, [][]string{projectRow(env.Data)}, env)
+			p := projectFromResource(res)
+			return renderer.Render(projectCols, [][]string{projectRow(p)}, httpclient.Envelope[Project]{Data: p})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Project name")

@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -67,7 +68,7 @@ func TestNewCommand(t *testing.T) {
 
 func TestList(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":[{"id":"c1","name":"prod","cluster_type":"virtual","status":"ready"}]}`},
+		{200, `{"data":[{"type":"clusters","id":"c1","attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}],"links":{}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := clusters.NewCommand()
@@ -86,7 +87,7 @@ func TestList(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"id":"c1","name":"prod","cluster_type":"virtual","status":"ready"}}`},
+		{200, `{"data":{"type":"clusters","id":"c1","attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := clusters.NewCommand()
@@ -105,7 +106,7 @@ func TestGet(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{201, `{"data":{"id":"c2","name":"dev","cluster_type":"virtual","status":"pending"}}`},
+		{201, `{"data":{"type":"clusters","id":"c2","attributes":{"name":"dev","cluster_type":"virtual","status":"pending"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := clusters.NewCommand()
@@ -272,5 +273,48 @@ func TestGet404(t *testing.T) {
 	err = sub.RunE(sub, []string{"missing"})
 	if err == nil {
 		t.Fatal("expected error for 404")
+	}
+}
+
+func buildCtxFromURL(t *testing.T, baseURL string, jsonMode bool) (context.Context, *bytes.Buffer) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	client := httpclient.New(baseURL, "tok")
+	renderer := output.New(jsonMode, "", &out, &errOut)
+	ctx := context.Background()
+	ctx = ctxutil.WithClient(ctx, client)
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: jsonMode})
+	return ctx, &out
+}
+
+func TestGetPopulatesNonIDAttributes(t *testing.T) {
+	var gotAccept string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAccept = r.Header.Get("Accept")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = w.Write([]byte(`{"data":{"type":"clusters","id":"c99","attributes":{"name":"prod-cluster","cluster_type":"virtual","status":"ready"}}}`))
+	}))
+	defer srv.Close()
+
+	ctx, out := buildCtxFromURL(t, srv.URL, true)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"c99"}); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	if gotAccept != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want %q", gotAccept, "application/vnd.api+json")
+	}
+	if !strings.Contains(out.String(), "prod-cluster") {
+		t.Errorf("expected name attribute in output, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "virtual") {
+		t.Errorf("expected cluster_type attribute in output, got: %s", out.String())
 	}
 }

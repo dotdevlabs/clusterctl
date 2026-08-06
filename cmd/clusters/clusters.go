@@ -26,6 +26,28 @@ type Cluster struct {
 	UpdatedAt       string `json:"updated_at,omitempty"`
 }
 
+type clusterAttrs struct {
+	Name            string `json:"name"`
+	ClusterType     string `json:"cluster_type"`
+	ParentClusterID string `json:"parent_cluster_id,omitempty"`
+	Status          string `json:"status,omitempty"`
+	CreatedAt       string `json:"created_at,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+}
+
+func clusterFromResource(r httpclient.Resource[clusterAttrs]) Cluster {
+	a := r.Attributes
+	return Cluster{
+		ID:              r.ID,
+		Name:            a.Name,
+		ClusterType:     a.ClusterType,
+		ParentClusterID: a.ParentClusterID,
+		Status:          a.Status,
+		CreatedAt:       a.CreatedAt,
+		UpdatedAt:       a.UpdatedAt,
+	}
+}
+
 type createClusterRequest struct {
 	Name            string `json:"name"`
 	ClusterType     string `json:"cluster_type"`
@@ -69,15 +91,18 @@ func newListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
-			env, err := httpclient.GetEnvelope[[]Cluster](cmd.Context(), client, "/api/v1/clusters")
+			col, err := httpclient.GetJSONAPICollection[clusterAttrs](cmd.Context(), client, "/api/v1/clusters")
 			if err != nil {
 				return err
 			}
 			var rows [][]string
-			for _, c := range env.Data {
+			var items []Cluster
+			for _, r := range col.Data {
+				c := clusterFromResource(r)
+				items = append(items, c)
 				rows = append(rows, clusterRow(c))
 			}
-			return renderer.Render(clusterCols, rows, env)
+			return renderer.Render(clusterCols, rows, httpclient.Envelope[[]Cluster]{Data: items})
 		},
 	}
 }
@@ -91,11 +116,12 @@ func newGetCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/clusters/" + url.PathEscape(args[0])
-			env, err := httpclient.GetEnvelope[Cluster](cmd.Context(), client, path)
+			res, err := httpclient.GetJSONAPISingle[clusterAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(clusterCols, [][]string{clusterRow(env.Data)}, env)
+			c := clusterFromResource(res)
+			return renderer.Render(clusterCols, [][]string{clusterRow(c)}, httpclient.Envelope[Cluster]{Data: c})
 		},
 	}
 }
@@ -118,11 +144,12 @@ func newCreateCmd() *cobra.Command {
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
-			env, err := httpclient.PostEnvelope[Cluster](cmd.Context(), client, "/api/v1/clusters", body)
+			res, err := httpclient.PostJSONAPISingle[clusterAttrs](cmd.Context(), client, "/api/v1/clusters", body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(clusterCols, [][]string{clusterRow(env.Data)}, env)
+			c := clusterFromResource(res)
+			return renderer.Render(clusterCols, [][]string{clusterRow(c)}, httpclient.Envelope[Cluster]{Data: c})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Cluster name")
