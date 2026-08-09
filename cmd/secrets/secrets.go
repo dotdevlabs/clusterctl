@@ -15,41 +15,46 @@ import (
 
 // Secret is the API response shape for a secret resource.
 type Secret struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	ProjectID string `json:"project_id,omitempty"`
-	CreatedAt string `json:"created_at,omitempty"`
+	ID                   string `json:"id"`
+	KubernetesSecretName string `json:"kubernetes_secret_name,omitempty"`
+	Key                  string `json:"key,omitempty"`
+	ProjectID            string `json:"project_id,omitempty"`
+	CreatedAt            string `json:"created_at,omitempty"`
 }
 
 type secretAttrs struct {
-	Name      string `json:"name"`
-	ProjectID string `json:"project_id,omitempty"`
-	CreatedAt string `json:"created_at,omitempty"`
+	KubernetesSecretName string `json:"kubernetes_secret_name,omitempty"`
+	Key                  string `json:"key,omitempty"`
+	ProjectID            string `json:"project_id,omitempty"`
+	CreatedAt            string `json:"created_at,omitempty"`
 }
 
 func secretFromResource(r httpclient.Resource[secretAttrs]) Secret {
 	a := r.Attributes
 	return Secret{
-		ID:        r.ID,
-		Name:      a.Name,
-		ProjectID: a.ProjectID,
-		CreatedAt: a.CreatedAt,
+		ID:                   r.ID,
+		KubernetesSecretName: a.KubernetesSecretName,
+		Key:                  a.Key,
+		ProjectID:            a.ProjectID,
+		CreatedAt:            a.CreatedAt,
 	}
 }
 
 type createSecretRequest struct {
-	Name  string `json:"name"`
-	Value string `json:"value,omitempty"`
+	KubernetesSecretName string `json:"kubernetes_secret_name"`
+	Key                  string `json:"key"`
+	Value                string `json:"value,omitempty"`
 }
 
 var secretCols = []output.Column{
 	{Header: "ID"},
-	{Header: "NAME"},
+	{Header: "K8S-SECRET"},
+	{Header: "KEY"},
 	{Header: "CREATED"},
 }
 
 func secretRow(s Secret) []string {
-	return []string{s.ID, s.Name, s.CreatedAt}
+	return []string{s.ID, s.KubernetesSecretName, s.Key, s.CreatedAt}
 }
 
 // NewCommand returns the "secrets" cobra.Command with all subcommands attached.
@@ -98,10 +103,10 @@ func newListCmd(projectID *string) *cobra.Command {
 }
 
 func newCreateCmd(projectID *string) *cobra.Command {
-	var name, value string
+	var secretName, key, value string
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a secret in a project",
+		Short: "Create a secret entry in a project",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if *projectID == "" {
 				return fmt.Errorf("--project-id is required")
@@ -110,7 +115,11 @@ func newCreateCmd(projectID *string) *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := createSecretRequest{Name: name, Value: value}
+			body := createSecretRequest{
+				KubernetesSecretName: secretName,
+				Key:                  key,
+				Value:                value,
+			}
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
@@ -123,9 +132,13 @@ func newCreateCmd(projectID *string) *cobra.Command {
 			return renderer.Render(secretCols, [][]string{secretRow(s)}, httpclient.Envelope[Secret]{Data: s})
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "Secret name")
+	cmd.Flags().StringVar(&secretName, "secret-name", "", "Target Kubernetes Secret name (kubernetes_secret_name)")
+	cmd.Flags().StringVar(&key, "key", "", "Key within the Kubernetes Secret data map")
 	cmd.Flags().StringVar(&value, "value", "", "Secret value")
-	if err := cmd.MarkFlagRequired("name"); err != nil {
+	if err := cmd.MarkFlagRequired("secret-name"); err != nil {
+		panic(err)
+	}
+	if err := cmd.MarkFlagRequired("key"); err != nil {
 		panic(err)
 	}
 	return cmd

@@ -62,7 +62,7 @@ func aiWorkflows() []airef.Workflow {
 			Name:        "Materialize a secret",
 			Description: "Create a secret in a project and materialize it to target clusters.",
 			Steps: []string{
-				"clusterctl secrets create --project-id <project-id> --name my-secret --value <secret-value>",
+				"clusterctl secrets create --project-id <project-id> --secret-name app-secrets --key DATABASE_URL --value <secret-value>",
 				"clusterctl secrets list --project-id <project-id>",
 				"clusterctl secrets materialize --project-id <project-id>",
 			},
