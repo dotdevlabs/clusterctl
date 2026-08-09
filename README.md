@@ -119,9 +119,20 @@ Secrets are scoped to a project. All secrets subcommands require `--project-id`.
 
 ```bash
 clusterctl secrets list --project-id <id>
-clusterctl secrets create --project-id <id> --name <name> [--value <value>]
+clusterctl secrets create --project-id <id> --secret-name <k8s-secret-name> --key <key> [--value <value>]
 clusterctl secrets delete --project-id <id> <secret-id>
 clusterctl secrets materialize --project-id <id>
+```
+
+A ClusterControl project secret maps to a Kubernetes Secret entry: `--secret-name` is the target Kubernetes Secret name and `--key` is the key within its data map. Multiple entries with the same `--secret-name` and different `--key` values are grouped into a single Kubernetes Secret on `materialize`.
+
+```bash
+# Add two keys to the same Kubernetes Secret
+clusterctl secrets create --project-id <id> --secret-name app-secrets --key DATABASE_URL --value <url>
+clusterctl secrets create --project-id <id> --secret-name app-secrets --key SECRET_KEY_BASE --value <key>
+
+# Add a separate secret
+clusterctl secrets create --project-id <id> --secret-name cloudflared-token --key TUNNEL_TOKEN --value <token>
 ```
 
 ### ai
