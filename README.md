@@ -73,20 +73,27 @@ The active context can be overridden per-command with `--context <name>` or `CLU
 ```bash
 clusterctl clusters list
 clusterctl clusters get <id>
-clusterctl clusters create --name <name> --cluster-type <virtual|imported> [--parent-cluster-id <id>]
-clusterctl clusters update <id> [--name <name>] [--cluster-type <type>] [--parent-cluster-id <id>]
+clusterctl clusters create --cluster-type <virtual|imported> [--name <name>] \
+  [--parent-cluster-id <id>] [--kubeconfig <yaml>] [--gitops-repo-url <url>] \
+  [--k8s-base-hostname <hostname>] [--kubeconfig-export-namespace <ns>] \
+  [--cluster-issuer-name <name>] [--ingress-class-name <name>]
+clusterctl clusters update <id> [--k8s-base-hostname <hostname>] \
+  [--kubeconfig-export-namespace <ns>] [--cluster-issuer-name <name>] \
+  [--ingress-class-name <name>] [--gitops-repo-url <url>] [--kubeconfig <yaml>]
 clusterctl clusters delete <id>
 clusterctl clusters health-check <id>
 clusterctl clusters flux-bootstrap <id>
 ```
+
+> **Note:** `clusters update` accepts only infrastructure-level fields (`k8s-base-hostname`, `kubeconfig-export-namespace`, `cluster-issuer-name`, `ingress-class-name`, `gitops-repo-url`, `kubeconfig`). Cluster name and type cannot be changed after creation.
 
 ### projects
 
 ```bash
 clusterctl projects list
 clusterctl projects get <id>
-clusterctl projects create --name <name>
-clusterctl projects update <id> --name <name>
+clusterctl projects create --name <name> [--v-cluster-id <id>] [--github-pat-id <id>]
+clusterctl projects update <id> [--name <name>] [--v-cluster-id <id>] [--github-pat-id <id>]
 clusterctl projects delete <id>
 ```
 
@@ -95,9 +102,12 @@ clusterctl projects delete <id>
 ```bash
 clusterctl packages list
 clusterctl packages get <id>
-clusterctl packages create --name <name> [--source-type <type>] [--source-url <url>] \
-  [--source-branch <branch>] [--source-path <path>] [--source-chart <chart>]
-clusterctl packages update <id> [--name <name>] [--source-type <type>] ...
+clusterctl packages create --name <name> [--description <desc>] [--source-type <helm|git>] \
+  [--source-url <url>] [--source-branch <branch>] [--source-path <path>] \
+  [--source-chart <chart>] [--source-tag-pattern <pattern>]
+clusterctl packages update <id> [--name <name>] [--description <desc>] \
+  [--source-type <type>] [--source-url <url>] [--source-branch <branch>] \
+  [--source-path <path>] [--source-chart <chart>] [--source-tag-pattern <pattern>]
 clusterctl packages delete <id>
 ```
 
@@ -106,12 +116,15 @@ clusterctl packages delete <id>
 ```bash
 clusterctl deployments list
 clusterctl deployments get <id>
-clusterctl deployments create --project-id <id> --cluster-id <id> --name <name> \
-  --namespace <namespace> --package-name <name> [--package-version <ver>] [--values-override <yaml>]
+clusterctl deployments create --project-id <id> --name <name> --namespace <namespace> \
+  --package-name <name> --package-version <ver> [--cluster-id <id>] [--values-override <yaml>]
 clusterctl deployments update <id> [--project-id <id>] [--cluster-id <id>] [--name <name>] \
-  [--namespace <namespace>] [--package-name <name>] ...
+  [--namespace <namespace>] [--package-name <name>] [--package-version <ver>] \
+  [--values-override <yaml>]
 clusterctl deployments delete <id>
 ```
+
+> **Note:** `--package-version` is required for `deployments create`. `--cluster-id` is optional (the deployment can be created without a cluster assignment).
 
 ### secrets
 
@@ -166,7 +179,7 @@ clusterctl clusters create \
   --cluster-type virtual \
   --parent-cluster-id 9f8e7d6c-...
 
-# Deploy a package to a cluster
+# Deploy a package to a cluster (--package-version is required)
 clusterctl deployments create \
   --project-id abc123 \
   --cluster-id def456 \
@@ -207,7 +220,13 @@ go test ./... -race
 bin/ci
 ```
 
-Runs: `gofmt` · `go vet` · `golangci-lint` · `go test -race` (≥70% coverage gate) · `go build`
+Runs: `gofmt` · `go vet` · `golangci-lint` · `go test -race` (≥70% coverage gate) · `go build` · API spec drift check
+
+The drift check compares `docs/api_spec.yaml` (the vendored ClusterControl API spec) against the upstream published spec. It requires `GITHUB_TOKEN` (or the `gh` CLI) with read access to `dotdevlabs/clustercontrol`. To update the vendored spec locally:
+
+```bash
+bash scripts/update-api-spec.sh
+```
 
 ## Release
 
