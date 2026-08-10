@@ -222,7 +222,7 @@ bin/ci
 
 Runs: `gofmt` · `go vet` · `golangci-lint` · `go test -race` (≥70% coverage gate) · `go build` · API spec drift check
 
-The drift check compares `docs/api_spec.yaml` (the vendored ClusterControl API spec) against the upstream published spec. It requires `GITHUB_TOKEN` (or the `gh` CLI) with read access to `dotdevlabs/clustercontrol`. To update the vendored spec locally:
+The drift check compares `docs/api_spec.yaml` (the vendored ClusterControl API spec) against the upstream published spec. It requires a `GITHUB_TOKEN` or `gh` CLI session with read access to `dotdevlabs/clustercontrol`. When cross-repo access is unavailable (e.g. the default `GITHUB_TOKEN` in Actions for a fork), the check skips with a warning rather than failing CI. To enable enforcement, add a fine-grained PAT with `contents: read` on `dotdevlabs/clustercontrol` as a `CLUSTERCONTROL_READ_TOKEN` org secret. To update the vendored spec locally:
 
 ```bash
 bash scripts/update-api-spec.sh
