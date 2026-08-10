@@ -14,6 +14,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/clusterctl/cmd/deployments"
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
 type mockTransport struct {
@@ -39,7 +40,7 @@ func (m *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func buildCtx(t *testing.T, transport http.RoundTripper, jsonMode bool) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	client := httpclient.NewWithTransport("https://example.com", "tok", transport)
+	client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: transport})
 	renderer := output.New(jsonMode, "", &out, &errOut)
 	ctx := context.Background()
 	ctx = ctxutil.WithClient(ctx, client)
@@ -104,7 +105,14 @@ func TestCreate(t *testing.T) {
 		t.Fatal(err)
 	}
 	sub.SetContext(ctx)
-	if err := sub.ParseFlags([]string{"--project-id", "p1", "--cluster-id", "c1", "--name", "my-deploy", "--namespace", "default", "--package-name", "promtail"}); err != nil {
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--cluster-id", "c1",
+		"--name", "my-deploy",
+		"--namespace", "default",
+		"--package-name", "promtail",
+		"--package-version", "6.17.1",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := sub.RunE(sub, []string{}); err != nil {
@@ -153,23 +161,72 @@ func TestCreate_RequestBodyShape(t *testing.T) {
 	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
-	if body["name"] != "host-log-collector" {
-		t.Errorf("expected name=host-log-collector, got %v", body["name"])
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be an object, got: %T", body["data"])
 	}
-	if body["namespace"] != "default" {
-		t.Errorf("expected namespace=default, got %v", body["namespace"])
+	if data["type"] != "deployments" {
+		t.Errorf("expected data.type=deployments, got %v", data["type"])
 	}
-	if body["package_name"] != "promtail" {
-		t.Errorf("expected package_name=promtail, got %v", body["package_name"])
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be an object, got: %T", data["attributes"])
 	}
-	if _, ok := body["package_id"]; ok {
-		t.Errorf("expected package_id to be absent, but it was present: %v", body["package_id"])
+	if attrs["name"] != "host-log-collector" {
+		t.Errorf("expected name=host-log-collector, got %v", attrs["name"])
+	}
+	if attrs["namespace"] != "default" {
+		t.Errorf("expected namespace=default, got %v", attrs["namespace"])
+	}
+	if attrs["package_name"] != "promtail" {
+		t.Errorf("expected package_name=promtail, got %v", attrs["package_name"])
+	}
+	if attrs["package_version"] != "6.17.1" {
+		t.Errorf("expected package_version=6.17.1, got %v", attrs["package_version"])
+	}
+	if _, ok := attrs["package_id"]; ok {
+		t.Errorf("expected package_id to be absent, but it was present: %v", attrs["package_id"])
+	}
+}
+
+// TestCreate_JSONAPIContentType verifies create sends correct media types.
+func TestCreate_JSONAPIContentType(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"deployments","id":"d2","attributes":{"name":"my-deploy","project_id":"p1","status":"pending"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "my-deploy",
+		"--namespace", "default",
+		"--package-name", "promtail",
+		"--package-version", "1.0.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if got := mt.calls[0].Header.Get("Content-Type"); got != "application/vnd.api+json" {
+		t.Errorf("Content-Type = %q, want application/vnd.api+json", got)
+	}
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
 
 func TestUpdate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"id":"d1","name":"my-deploy","project_id":"p1","cluster_id":"c1","package_name":"promtail","status":"deployed"}}`},
+		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","project_id":"p1","cluster_id":"c1","package_name":"promtail","package_version":"2.0.0","status":"deployed"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := deployments.NewCommand()
@@ -191,7 +248,7 @@ func TestUpdate(t *testing.T) {
 
 func TestUpdate_RequestBodyShape(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"id":"d1","name":"my-deploy","project_id":"p1","cluster_id":"c1","namespace":"kube-system","package_name":"promtail-new","status":"deployed"}}`},
+		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","namespace":"kube-system","package_name":"promtail-new","status":"deployed"}}}`},
 	}}
 	ctx, _ := buildCtx(t, mt, true)
 	parent := deployments.NewCommand()
@@ -217,14 +274,54 @@ func TestUpdate_RequestBodyShape(t *testing.T) {
 	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
-	if body["package_name"] != "promtail-new" {
-		t.Errorf("expected package_name=promtail-new, got %v", body["package_name"])
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be an object, got: %T", body["data"])
 	}
-	if body["namespace"] != "kube-system" {
-		t.Errorf("expected namespace=kube-system, got %v", body["namespace"])
+	if data["type"] != "deployments" {
+		t.Errorf("expected data.type=deployments, got %v", data["type"])
 	}
-	if _, ok := body["package_id"]; ok {
-		t.Errorf("expected package_id to be absent, but it was present: %v", body["package_id"])
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be an object, got: %T", data["attributes"])
+	}
+	if attrs["package_name"] != "promtail-new" {
+		t.Errorf("expected package_name=promtail-new, got %v", attrs["package_name"])
+	}
+	if attrs["namespace"] != "kube-system" {
+		t.Errorf("expected namespace=kube-system, got %v", attrs["namespace"])
+	}
+	if _, ok := attrs["package_id"]; ok {
+		t.Errorf("expected package_id to be absent, but it was present: %v", attrs["package_id"])
+	}
+}
+
+// TestUpdate_JSONAPIContentType verifies the update request sends correct media types.
+func TestUpdate_JSONAPIContentType(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","status":"deployed"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--package-version", "2.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if got := mt.calls[0].Header.Get("Content-Type"); got != "application/vnd.api+json" {
+		t.Errorf("Content-Type = %q, want application/vnd.api+json", got)
+	}
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
 
@@ -245,6 +342,7 @@ func TestCreate422WithError(t *testing.T) {
 		"--name", "x",
 		"--namespace", "ns",
 		"--package-name", "pkg",
+		"--package-version", "1.0.0",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -284,6 +382,29 @@ func TestDelete(t *testing.T) {
 	sub.SetContext(ctx)
 	if err := sub.RunE(sub, []string{"d1"}); err != nil {
 		t.Fatalf("delete: %v", err)
+	}
+}
+
+// TestDelete_JSONAPIAcceptHeader verifies that delete sends the correct Accept header.
+func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{204, ``},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"delete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
 

@@ -34,4 +34,7 @@ fi
 echo "==> go build"
 go build ./...
 
+echo "==> api spec drift check"
+bash scripts/check-api-spec-drift.sh
+
 echo "==> all checks passed"

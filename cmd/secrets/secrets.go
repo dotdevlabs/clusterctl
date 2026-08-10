@@ -11,21 +11,23 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
+
+const secretResourceType = "project_secrets"
 
 // Secret is the API response shape for a secret resource.
 type Secret struct {
 	ID                   string `json:"id"`
 	KubernetesSecretName string `json:"kubernetes_secret_name,omitempty"`
 	Key                  string `json:"key,omitempty"`
-	ProjectID            string `json:"project_id,omitempty"`
 	CreatedAt            string `json:"created_at,omitempty"`
 }
 
 type secretAttrs struct {
 	KubernetesSecretName string `json:"kubernetes_secret_name,omitempty"`
 	Key                  string `json:"key,omitempty"`
-	ProjectID            string `json:"project_id,omitempty"`
 	CreatedAt            string `json:"created_at,omitempty"`
 }
 
@@ -35,15 +37,21 @@ func secretFromResource(r httpclient.Resource[secretAttrs]) Secret {
 		ID:                   r.ID,
 		KubernetesSecretName: a.KubernetesSecretName,
 		Key:                  a.Key,
-		ProjectID:            a.ProjectID,
 		CreatedAt:            a.CreatedAt,
 	}
 }
 
-type createSecretRequest struct {
+// createSecretAttrs matches the SecretRequest.data.attributes in the spec.
+type createSecretAttrs struct {
 	KubernetesSecretName string `json:"kubernetes_secret_name"`
 	Key                  string `json:"key"`
-	Value                string `json:"value,omitempty"`
+	Value                string `json:"value"`
+}
+
+// secretMaterializationAttrs matches the SecretMaterializationAttributes in the spec.
+type secretMaterializationAttrs struct {
+	AppliedCount int    `json:"applied_count"`
+	Message      string `json:"message"`
 }
 
 var secretCols = []output.Column{
@@ -115,11 +123,11 @@ func newCreateCmd(projectID *string) *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := createSecretRequest{
+			body := jsonapi.Wrap(secretResourceType, createSecretAttrs{
 				KubernetesSecretName: secretName,
 				Key:                  key,
 				Value:                value,
-			}
+			})
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
@@ -180,13 +188,13 @@ func newMaterializeCmd(projectID *string) *cobra.Command {
 				_, err := cmd.OutOrStdout().Write([]byte("POST " + path + "\n"))
 				return err
 			}
-			var resp map[string]any
-			if err := client.Post(cmd.Context(), path, nil, &resp); err != nil {
+			res, err := httpclient.PostJSONAPISingle[secretMaterializationAttrs](cmd.Context(), client, path, nil)
+			if err != nil {
 				return err
 			}
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(resp)
+			return enc.Encode(res.Attributes)
 		},
 	}
 }

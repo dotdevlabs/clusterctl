@@ -2,7 +2,6 @@
 package deployments
 
 import (
-	"context"
 	"net/url"
 
 	"github.com/spf13/cobra"
@@ -11,7 +10,11 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
+
+const deploymentResourceType = "deployments"
 
 // Deployment is the API response shape for a deployment resource.
 type Deployment struct {
@@ -58,13 +61,14 @@ func deploymentFromResource(r httpclient.Resource[deploymentAttrs]) Deployment {
 	}
 }
 
-type createDeploymentRequest struct {
-	Name           string `json:"name"`
-	Namespace      string `json:"namespace,omitempty"`
-	ProjectID      string `json:"project_id,omitempty"`
+// createDeploymentAttrs matches DeploymentRequest.data.attributes in the spec.
+type createDeploymentAttrs struct {
+	ProjectID      string `json:"project_id"`
 	ClusterID      string `json:"cluster_id,omitempty"`
-	PackageName    string `json:"package_name,omitempty"`
-	PackageVersion string `json:"package_version,omitempty"`
+	Name           string `json:"name"`
+	Namespace      string `json:"namespace"`
+	PackageName    string `json:"package_name"`
+	PackageVersion string `json:"package_version"`
 	ValuesOverride string `json:"values_override,omitempty"`
 }
 
@@ -149,15 +153,15 @@ func newCreateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := createDeploymentRequest{
-				Name:           name,
-				Namespace:      namespace,
+			body := jsonapi.Wrap(deploymentResourceType, createDeploymentAttrs{
 				ProjectID:      projectID,
 				ClusterID:      clusterID,
+				Name:           name,
+				Namespace:      namespace,
 				PackageName:    packageName,
 				PackageVersion: packageVersion,
 				ValuesOverride: valuesOverride,
-			}
+			})
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
@@ -185,10 +189,10 @@ func newCreateCmd() *cobra.Command {
 	if err := cmd.MarkFlagRequired("project-id"); err != nil {
 		panic(err)
 	}
-	if err := cmd.MarkFlagRequired("cluster-id"); err != nil {
+	if err := cmd.MarkFlagRequired("package-name"); err != nil {
 		panic(err)
 	}
-	if err := cmd.MarkFlagRequired("package-name"); err != nil {
+	if err := cmd.MarkFlagRequired("package-version"); err != nil {
 		panic(err)
 	}
 	return cmd
@@ -205,40 +209,50 @@ func newUpdateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := map[string]any{}
+			attrs := createDeploymentAttrs{}
+			anyChanged := false
 			if cmd.Flags().Changed("name") {
-				body["name"] = name
+				attrs.Name = name
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("namespace") {
-				body["namespace"] = namespace
+				attrs.Namespace = namespace
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("project-id") {
-				body["project_id"] = projectID
+				attrs.ProjectID = projectID
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("cluster-id") {
-				body["cluster_id"] = clusterID
+				attrs.ClusterID = clusterID
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("package-name") {
-				body["package_name"] = packageName
+				attrs.PackageName = packageName
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("package-version") {
-				body["package_version"] = packageVersion
+				attrs.PackageVersion = packageVersion
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("values-override") {
-				body["values_override"] = valuesOverride
+				attrs.ValuesOverride = valuesOverride
+				anyChanged = true
 			}
-			if len(body) == 0 {
+			if !anyChanged {
 				return clierror.New(clierror.CodeUsage, "at least one flag required for update", "")
 			}
+			body := jsonapi.Wrap(deploymentResourceType, attrs)
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
 			path := "/api/v1/deployments/" + url.PathEscape(args[0])
-			env, err := patchEnvelope[Deployment](cmd.Context(), client, path, body)
+			res, err := jsonapi.PatchSingle[deploymentAttrs](cmd.Context(), client, path, body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(deploymentCols, [][]string{deploymentRow(env.Data)}, env)
+			d := deploymentFromResource(res)
+			return renderer.Render(deploymentCols, [][]string{deploymentRow(d)}, httpclient.Envelope[Deployment]{Data: d})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Deployment name")
@@ -266,12 +280,4 @@ func newDeleteCmd() *cobra.Command {
 			return client.Delete(cmd.Context(), "/api/v1/deployments/"+url.PathEscape(args[0]))
 		},
 	}
-}
-
-func patchEnvelope[T any](ctx context.Context, client *httpclient.Client, path string, body any) (httpclient.Envelope[T], error) {
-	var env httpclient.Envelope[T]
-	if err := client.Patch(ctx, path, body, &env); err != nil {
-		return httpclient.Envelope[T]{}, err
-	}
-	return env, nil
 }

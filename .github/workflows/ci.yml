@@ -25,4 +25,6 @@ jobs:
               "golangci-lint-1.64.8-linux-amd64/golangci-lint"
 
       - name: Run bin/ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bin/ci

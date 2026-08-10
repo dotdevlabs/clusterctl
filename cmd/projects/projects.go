@@ -2,7 +2,6 @@
 package projects
 
 import (
-	"context"
 	"net/url"
 
 	"github.com/spf13/cobra"
@@ -11,7 +10,11 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
+
+const projectResourceType = "projects"
 
 // Project is the API response shape for a project resource.
 type Project struct {
@@ -37,8 +40,11 @@ func projectFromResource(r httpclient.Resource[projectAttrs]) Project {
 	}
 }
 
-type createProjectRequest struct {
-	Name string `json:"name"`
+// projectRequestAttrs matches ProjectRequestAttributes in the spec.
+type projectRequestAttrs struct {
+	Name        string `json:"name,omitempty"`
+	VClusterID  string `json:"v_cluster_id,omitempty"`
+	GithubPatID string `json:"github_pat_id,omitempty"`
 }
 
 var projectCols = []output.Column{
@@ -110,7 +116,7 @@ func newGetCmd() *cobra.Command {
 }
 
 func newCreateCmd() *cobra.Command {
-	var name string
+	var name, vClusterID, githubPatID string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new project",
@@ -119,7 +125,11 @@ func newCreateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := createProjectRequest{Name: name}
+			body := jsonapi.Wrap(projectResourceType, projectRequestAttrs{
+				Name:        name,
+				VClusterID:  vClusterID,
+				GithubPatID: githubPatID,
+			})
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
@@ -132,6 +142,8 @@ func newCreateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Project name")
+	cmd.Flags().StringVar(&vClusterID, "v-cluster-id", "", "Virtual cluster ID")
+	cmd.Flags().StringVar(&githubPatID, "github-pat-id", "", "GitHub PAT ID")
 	if err := cmd.MarkFlagRequired("name"); err != nil {
 		panic(err)
 	}
@@ -139,7 +151,7 @@ func newCreateCmd() *cobra.Command {
 }
 
 func newUpdateCmd() *cobra.Command {
-	var name string
+	var name, vClusterID, githubPatID string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a project",
@@ -149,25 +161,39 @@ func newUpdateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := map[string]any{}
+			attrs := projectRequestAttrs{}
+			anyChanged := false
 			if cmd.Flags().Changed("name") {
-				body["name"] = name
+				attrs.Name = name
+				anyChanged = true
 			}
-			if len(body) == 0 {
+			if cmd.Flags().Changed("v-cluster-id") {
+				attrs.VClusterID = vClusterID
+				anyChanged = true
+			}
+			if cmd.Flags().Changed("github-pat-id") {
+				attrs.GithubPatID = githubPatID
+				anyChanged = true
+			}
+			if !anyChanged {
 				return clierror.New(clierror.CodeUsage, "at least one flag required for update", "")
 			}
+			body := jsonapi.Wrap(projectResourceType, attrs)
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
 			path := "/api/v1/projects/" + url.PathEscape(args[0])
-			env, err := patchEnvelope[Project](cmd.Context(), client, path, body)
+			res, err := jsonapi.PatchSingle[projectAttrs](cmd.Context(), client, path, body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(projectCols, [][]string{projectRow(env.Data)}, env)
+			p := projectFromResource(res)
+			return renderer.Render(projectCols, [][]string{projectRow(p)}, httpclient.Envelope[Project]{Data: p})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Project name")
+	cmd.Flags().StringVar(&vClusterID, "v-cluster-id", "", "Virtual cluster ID")
+	cmd.Flags().StringVar(&githubPatID, "github-pat-id", "", "GitHub PAT ID")
 	return cmd
 }
 
@@ -186,12 +212,4 @@ func newDeleteCmd() *cobra.Command {
 			return client.Delete(cmd.Context(), "/api/v1/projects/"+url.PathEscape(args[0]))
 		},
 	}
-}
-
-func patchEnvelope[T any](ctx context.Context, client *httpclient.Client, path string, body any) (httpclient.Envelope[T], error) {
-	var env httpclient.Envelope[T]
-	if err := client.Patch(ctx, path, body, &env); err != nil {
-		return httpclient.Envelope[T]{}, err
-	}
-	return env, nil
 }
