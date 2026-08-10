@@ -54,10 +54,51 @@ components:
     # ── Meta / pagination ──────────────────────────────────────────────────────
     ListMeta:
       type: object
-      required: [total_count]
+      required: [total_count, page_count, current_page, page_size]
       properties:
         total_count:
           type: integer
+          description: Total number of records across all pages
+        page_count:
+          type: integer
+          description: Total number of pages
+        current_page:
+          type: integer
+          description: Current page number (1-indexed)
+        page_size:
+          type: integer
+          description: Number of records per page
+
+    ResourceLinks:
+      type: object
+      required: [self]
+      properties:
+        self:
+          type: string
+          format: uri
+          description: Canonical URL for this resource
+
+    CollectionLinks:
+      type: object
+      required: [self, first, last, prev, next]
+      properties:
+        self:
+          type: string
+          format: uri
+        first:
+          type: string
+          format: uri
+        last:
+          type: string
+          format: uri
+        prev:
+          type: string
+          format: uri
+          nullable: true
+        next:
+          type: string
+          format: uri
+          nullable: true
 
     # ── Auth ──────────────────────────────────────────────────────────────────
     AuthContextAttributes:
@@ -83,9 +124,12 @@ components:
 
     AuthContextResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [auth_contexts] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/AuthContextAttributes"
 
@@ -106,9 +150,12 @@ components:
 
     RegistrationResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [registrations] }
         id: { type: string, nullable: true }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/RegistrationAttributes"
 
@@ -156,9 +203,12 @@ components:
 
     ProjectResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [projects] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/ProjectAttributes"
 
@@ -171,7 +221,7 @@ components:
 
     ProjectListDocument:
       type: object
-      required: [data, meta]
+      required: [data, meta, links]
       properties:
         data:
           type: array
@@ -179,6 +229,8 @@ components:
             $ref: "#/components/schemas/ProjectResource"
         meta:
           $ref: "#/components/schemas/ListMeta"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
 
     ProjectRequestAttributes:
       type: object
@@ -233,9 +285,12 @@ components:
 
     ClusterResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [clusters] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/ClusterAttributes"
 
@@ -248,7 +303,7 @@ components:
 
     ClusterListDocument:
       type: object
-      required: [data, meta]
+      required: [data, meta, links]
       properties:
         data:
           type: array
@@ -256,6 +311,8 @@ components:
             $ref: "#/components/schemas/ClusterResource"
         meta:
           $ref: "#/components/schemas/ListMeta"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
 
     ClusterCreateRequest:
       type: object
@@ -309,9 +366,12 @@ components:
 
     SecretResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [project_secrets] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/SecretAttributes"
 
@@ -324,7 +384,7 @@ components:
 
     SecretListDocument:
       type: object
-      required: [data, meta]
+      required: [data, meta, links]
       properties:
         data:
           type: array
@@ -332,6 +392,8 @@ components:
             $ref: "#/components/schemas/SecretResource"
         meta:
           $ref: "#/components/schemas/ListMeta"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
 
     SecretRequest:
       type: object
@@ -359,9 +421,12 @@ components:
 
     SecretMaterializationResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [secret_materializations] }
         id: { type: string, nullable: true }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/SecretMaterializationAttributes"
 
@@ -392,9 +457,12 @@ components:
 
     PackageResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [packages] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/PackageAttributes"
 
@@ -407,7 +475,7 @@ components:
 
     PackageListDocument:
       type: object
-      required: [data, meta]
+      required: [data, meta, links]
       properties:
         data:
           type: array
@@ -415,6 +483,8 @@ components:
             $ref: "#/components/schemas/PackageResource"
         meta:
           $ref: "#/components/schemas/ListMeta"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
 
     PackageRequest:
       type: object
@@ -490,9 +560,12 @@ components:
 
     DeploymentResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [deployments] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/DeploymentAttributes"
 
@@ -505,7 +578,7 @@ components:
 
     DeploymentListDocument:
       type: object
-      required: [data, meta]
+      required: [data, meta, links]
       properties:
         data:
           type: array
@@ -513,6 +586,8 @@ components:
             $ref: "#/components/schemas/DeploymentResource"
         meta:
           $ref: "#/components/schemas/ListMeta"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
 
     DeploymentRequest:
       type: object
@@ -590,9 +665,12 @@ components:
 
     TemplateResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [templates] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/TemplateAttributes"
 
@@ -605,7 +683,7 @@ components:
 
     TemplateListDocument:
       type: object
-      required: [data, meta]
+      required: [data, meta, links]
       properties:
         data:
           type: array
@@ -613,13 +691,18 @@ components:
             $ref: "#/components/schemas/TemplateResource"
         meta:
           $ref: "#/components/schemas/ListMeta"
+        links:
+          $ref: "#/components/schemas/CollectionLinks"
 
     # ── Health Checks ─────────────────────────────────────────────────────────
     HealthCheckResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [health_checks] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           type: object
           properties:
@@ -645,9 +728,12 @@ components:
 
     ProvisioningResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [provisionings] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/ProvisioningAttributes"
 
@@ -677,9 +763,12 @@ components:
 
     FluxBootstrapResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [flux_bootstraps] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           $ref: "#/components/schemas/FluxBootstrapAttributes"
 
@@ -693,9 +782,12 @@ components:
     # ── Exposures ─────────────────────────────────────────────────────────────
     ExposureResource:
       type: object
+      required: [links]
       properties:
         type: { type: string, enum: [exposures] }
         id: { type: string }
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
         attributes:
           type: object
           properties:
@@ -716,6 +808,45 @@ components:
         status:
           type: string
           example: ok
+
+    # ── Status (deploy info) ───────────────────────────────────────────────────
+    StatusAttributes:
+      type: object
+      required: [version, sha, db_version]
+      properties:
+        version:
+          type: string
+          nullable: true
+          description: Build/release version string; null if not injected at build time
+        sha:
+          type: string
+          nullable: true
+          description: Git commit SHA the running image was built from; null if not injected
+        db_version:
+          type: string
+          description: Latest applied database schema migration version
+
+    StatusResource:
+      type: object
+      required: [type, id, links, attributes]
+      properties:
+        type:
+          type: string
+          enum: [status]
+        id:
+          type: string
+          example: current
+        links:
+          $ref: "#/components/schemas/ResourceLinks"
+        attributes:
+          $ref: "#/components/schemas/StatusAttributes"
+
+    StatusDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/StatusResource"
 
   responses:
     Unauthorized:
@@ -757,6 +888,24 @@ components:
       description: Resource deleted; no body returned
 
 paths:
+  # ── Status (deploy info, unauthenticated) ────────────────────────────────────
+  /status:
+    get:
+      operationId: getStatus
+      summary: Return running build deploy info
+      description: >
+        Returns the running build's deploy information. Unauthenticated.
+        Useful to confirm deployment state over HTTP without querying the cluster.
+      security: []
+      tags: [Status]
+      responses:
+        "200":
+          description: Deploy info
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/StatusDocument"
+
   # ── Auth ────────────────────────────────────────────────────────────────────
   /auth:
     get:
@@ -805,6 +954,17 @@ paths:
       operationId: listClusters
       summary: List clusters for the authenticated organization
       tags: [Clusters]
+      parameters:
+        - name: page[number]
+          in: query
+          required: false
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: Page number (1-indexed)
+        - name: page[size]
+          in: query
+          required: false
+          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
+          description: Number of records per page
       responses:
         "200":
           description: Cluster list
@@ -1011,6 +1171,17 @@ paths:
       operationId: listProjects
       summary: List projects for the authenticated organization
       tags: [Projects]
+      parameters:
+        - name: page[number]
+          in: query
+          required: false
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: Page number (1-indexed)
+        - name: page[size]
+          in: query
+          required: false
+          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
+          description: Number of records per page
       responses:
         "200":
           description: Project list
@@ -1108,6 +1279,17 @@ paths:
       operationId: listProjectSecrets
       summary: List secrets for a project (values are never returned)
       tags: [Secrets]
+      parameters:
+        - name: page[number]
+          in: query
+          required: false
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: Page number (1-indexed)
+        - name: page[size]
+          in: query
+          required: false
+          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
+          description: Number of records per page
       responses:
         "200":
           description: Secret list
@@ -1195,6 +1377,17 @@ paths:
       operationId: listPackages
       summary: List packages for the authenticated organization
       tags: [Packages]
+      parameters:
+        - name: page[number]
+          in: query
+          required: false
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: Page number (1-indexed)
+        - name: page[size]
+          in: query
+          required: false
+          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
+          description: Number of records per page
       responses:
         "200":
           description: Package list
@@ -1288,6 +1481,17 @@ paths:
       operationId: listDeployments
       summary: List deployments across all projects in the authenticated organization
       tags: [Deployments]
+      parameters:
+        - name: page[number]
+          in: query
+          required: false
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: Page number (1-indexed)
+        - name: page[size]
+          in: query
+          required: false
+          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
+          description: Number of records per page
       responses:
         "200":
           description: Deployment list (no flux fields)
@@ -1383,6 +1587,17 @@ paths:
       operationId: listTemplates
       summary: List available deployment templates
       tags: [Templates]
+      parameters:
+        - name: page[number]
+          in: query
+          required: false
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: Page number (1-indexed)
+        - name: page[size]
+          in: query
+          required: false
+          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
+          description: Number of records per page
       responses:
         "200":
           description: Template list

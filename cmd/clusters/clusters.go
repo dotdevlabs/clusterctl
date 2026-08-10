@@ -123,13 +123,13 @@ func newListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
-			col, err := httpclient.GetJSONAPICollection[clusterAttrs](cmd.Context(), client, "/api/v1/clusters")
+			resources, err := jsonapi.GetAllPages[clusterAttrs](cmd.Context(), client, "/api/v1/clusters")
 			if err != nil {
 				return err
 			}
 			var rows [][]string
 			var items []Cluster
-			for _, r := range col.Data {
+			for _, r := range resources {
 				c := clusterFromResource(r)
 				items = append(items, c)
 				rows = append(rows, clusterRow(c))
@@ -148,11 +148,11 @@ func newGetCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/clusters/" + url.PathEscape(args[0])
-			res, err := httpclient.GetJSONAPISingle[clusterAttrs](cmd.Context(), client, path)
+			res, err := jsonapi.GetSingle[clusterAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
-			c := clusterFromResource(res)
+			c := clusterFromResource(res.Resource)
 			return renderer.Render(clusterCols, [][]string{clusterRow(c)}, httpclient.Envelope[Cluster]{Data: c})
 		},
 	}
@@ -252,8 +252,13 @@ func newUpdateCmd() *cobra.Command {
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
-			path := "/api/v1/clusters/" + url.PathEscape(args[0])
-			res, err := jsonapi.PatchSingle[clusterAttrs](cmd.Context(), client, path, body)
+			initialPath := "/api/v1/clusters/" + url.PathEscape(args[0])
+			fetched, err := jsonapi.GetSingle[clusterAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			selfPath := jsonapi.SelfPath(fetched.SelfLink, initialPath)
+			res, err := jsonapi.PatchSingle[clusterAttrs](cmd.Context(), client, selfPath, body)
 			if err != nil {
 				return err
 			}
@@ -282,7 +287,12 @@ func newDeleteCmd() *cobra.Command {
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "DELETE /api/v1/clusters/%s\n", url.PathEscape(args[0]))
 				return err
 			}
-			return client.Delete(cmd.Context(), "/api/v1/clusters/"+url.PathEscape(args[0]))
+			initialPath := "/api/v1/clusters/" + url.PathEscape(args[0])
+			fetched, err := jsonapi.GetSingle[clusterAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			return client.Delete(cmd.Context(), jsonapi.SelfPath(fetched.SelfLink, initialPath))
 		},
 	}
 }
@@ -299,8 +309,13 @@ func newHealthCheckCmd() *cobra.Command {
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/clusters/%s/health_check\n", url.PathEscape(args[0]))
 				return err
 			}
-			path := "/api/v1/clusters/" + url.PathEscape(args[0]) + "/health_check"
-			res, err := httpclient.PostJSONAPISingle[healthCheckAttrs](cmd.Context(), client, path, nil)
+			initialPath := "/api/v1/clusters/" + url.PathEscape(args[0])
+			fetched, err := jsonapi.GetSingle[clusterAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			selfPath := jsonapi.SelfPath(fetched.SelfLink, initialPath)
+			res, err := httpclient.PostJSONAPISingle[healthCheckAttrs](cmd.Context(), client, selfPath+"/health_check", nil)
 			if err != nil {
 				return err
 			}
@@ -323,8 +338,13 @@ func newFluxBootstrapCmd() *cobra.Command {
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/clusters/%s/flux_bootstrap\n", url.PathEscape(args[0]))
 				return err
 			}
-			path := "/api/v1/clusters/" + url.PathEscape(args[0]) + "/flux_bootstrap"
-			res, err := httpclient.PostJSONAPISingle[fluxBootstrapAttrs](cmd.Context(), client, path, nil)
+			initialPath := "/api/v1/clusters/" + url.PathEscape(args[0])
+			fetched, err := jsonapi.GetSingle[clusterAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			selfPath := jsonapi.SelfPath(fetched.SelfLink, initialPath)
+			res, err := httpclient.PostJSONAPISingle[fluxBootstrapAttrs](cmd.Context(), client, selfPath+"/flux_bootstrap", nil)
 			if err != nil {
 				return err
 			}

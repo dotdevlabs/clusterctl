@@ -107,13 +107,13 @@ func newListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
-			col, err := httpclient.GetJSONAPICollection[packageAttrs](cmd.Context(), client, "/api/v1/packages")
+			resources, err := jsonapi.GetAllPages[packageAttrs](cmd.Context(), client, "/api/v1/packages")
 			if err != nil {
 				return err
 			}
 			var rows [][]string
 			var items []Package
-			for _, r := range col.Data {
+			for _, r := range resources {
 				p := packageFromResource(r)
 				items = append(items, p)
 				rows = append(rows, packageRow(p))
@@ -132,11 +132,11 @@ func newGetCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/packages/" + url.PathEscape(args[0])
-			res, err := httpclient.GetJSONAPISingle[packageAttrs](cmd.Context(), client, path)
+			res, err := jsonapi.GetSingle[packageAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
-			p := packageFromResource(res)
+			p := packageFromResource(res.Resource)
 			return renderer.Render(packageCols, [][]string{packageRow(p)}, httpclient.Envelope[Package]{Data: p})
 		},
 	}
@@ -239,8 +239,13 @@ func newUpdateCmd() *cobra.Command {
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
-			path := "/api/v1/packages/" + url.PathEscape(args[0])
-			res, err := jsonapi.PatchSingle[packageAttrs](cmd.Context(), client, path, body)
+			initialPath := "/api/v1/packages/" + url.PathEscape(args[0])
+			fetched, err := jsonapi.GetSingle[packageAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			selfPath := jsonapi.SelfPath(fetched.SelfLink, initialPath)
+			res, err := jsonapi.PatchSingle[packageAttrs](cmd.Context(), client, selfPath, body)
 			if err != nil {
 				return err
 			}
@@ -271,7 +276,12 @@ func newDeleteCmd() *cobra.Command {
 				_, err := cmd.OutOrStdout().Write([]byte("DELETE /api/v1/packages/" + url.PathEscape(args[0]) + "\n"))
 				return err
 			}
-			return client.Delete(cmd.Context(), "/api/v1/packages/"+url.PathEscape(args[0]))
+			initialPath := "/api/v1/packages/" + url.PathEscape(args[0])
+			fetched, err := jsonapi.GetSingle[packageAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			return client.Delete(cmd.Context(), jsonapi.SelfPath(fetched.SelfLink, initialPath))
 		},
 	}
 }

@@ -235,6 +235,7 @@ func TestCreateDryRun(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 		{200, `{"data":{"type":"clusters","id":"c1","attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
@@ -253,14 +254,15 @@ func TestUpdate(t *testing.T) {
 	if !strings.Contains(out.String(), "c1") {
 		t.Errorf("expected c1 in output, got: %s", out.String())
 	}
-	if mt.calls[0].Method != http.MethodPatch {
-		t.Errorf("expected PATCH, got %s", mt.calls[0].Method)
+	if mt.calls[1].Method != http.MethodPatch {
+		t.Errorf("expected PATCH, got %s", mt.calls[1].Method)
 	}
 }
 
 // TestUpdate_JSONAPIBodyEnvelope verifies the update request body is a JSON:API envelope.
 func TestUpdate_JSONAPIBodyEnvelope(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 		{200, `{"data":{"type":"clusters","id":"c1","attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 	}}
 	ctx, _ := buildCtx(t, mt, true)
@@ -276,10 +278,10 @@ func TestUpdate_JSONAPIBodyEnvelope(t *testing.T) {
 	if err := sub.RunE(sub, []string{"c1"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if len(mt.calls) == 0 {
-		t.Fatal("expected HTTP call")
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + PATCH)")
 	}
-	raw, err := io.ReadAll(mt.calls[0].Body)
+	raw, err := io.ReadAll(mt.calls[1].Body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,6 +308,7 @@ func TestUpdate_JSONAPIBodyEnvelope(t *testing.T) {
 // TestUpdate_JSONAPIContentType verifies the update request sends correct media types.
 func TestUpdate_JSONAPIContentType(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 		{200, `{"data":{"type":"clusters","id":"c1","attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 	}}
 	ctx, _ := buildCtx(t, mt, true)
@@ -321,13 +324,13 @@ func TestUpdate_JSONAPIContentType(t *testing.T) {
 	if err := sub.RunE(sub, []string{"c1"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if len(mt.calls) == 0 {
-		t.Fatal("expected HTTP call")
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + PATCH)")
 	}
-	if got := mt.calls[0].Header.Get("Content-Type"); got != "application/vnd.api+json" {
+	if got := mt.calls[1].Header.Get("Content-Type"); got != "application/vnd.api+json" {
 		t.Errorf("Content-Type = %q, want application/vnd.api+json", got)
 	}
-	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+	if got := mt.calls[1].Header.Get("Accept"); got != "application/vnd.api+json" {
 		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
@@ -352,6 +355,7 @@ func TestUpdateNoFlags(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 		{204, ``},
 	}}
 	ctx, _ := buildCtx(t, mt, false)
@@ -364,13 +368,14 @@ func TestDelete(t *testing.T) {
 	if err := sub.RunE(sub, []string{"c1"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if mt.calls[0].Method != http.MethodDelete {
-		t.Errorf("expected DELETE, got %s", mt.calls[0].Method)
+	if mt.calls[1].Method != http.MethodDelete {
+		t.Errorf("expected DELETE, got %s", mt.calls[1].Method)
 	}
 }
 
 func TestHealthCheck(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 		{202, `{"data":{"type":"health_checks","id":"1","attributes":{"status":"health_check_enqueued"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, false)
@@ -391,6 +396,7 @@ func TestHealthCheck(t *testing.T) {
 
 func TestFluxBootstrap(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
 		{202, `{"data":{"type":"flux_bootstraps","id":"1","attributes":{"name":"prod","flux_bootstrap_status":"bootstrapped"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, false)
@@ -429,7 +435,7 @@ func TestGet404(t *testing.T) {
 func buildCtxFromURL(t *testing.T, baseURL string, jsonMode bool) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	client := httpclient.New(baseURL, "tok")
+	client := httpclient.NewWithTransport(baseURL, "tok", &jsonapi.Transport{Wrapped: http.DefaultTransport})
 	renderer := output.New(jsonMode, "", &out, &errOut)
 	ctx := context.Background()
 	ctx = ctxutil.WithClient(ctx, client)
@@ -466,5 +472,145 @@ func TestGetPopulatesNonIDAttributes(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "virtual") {
 		t.Errorf("expected cluster_type attribute in output, got: %s", out.String())
+	}
+}
+
+// TestListFollowsNextLinks verifies that list follows links.next across multiple pages.
+func TestListFollowsNextLinks(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":[{"type":"clusters","id":"c1","attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}],"links":{"next":"/api/v1/clusters?page=2"}}`},
+		{200, `{"data":[{"type":"clusters","id":"c2","attributes":{"name":"dev","cluster_type":"virtual","status":"ready"}}],"links":{}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls (one per page), got %d", len(mt.calls))
+	}
+	if !strings.Contains(mt.calls[1].URL.RawQuery, "page=2") {
+		t.Errorf("expected second call to use page=2 query, got: %s", mt.calls[1].URL.RawQuery)
+	}
+	if !strings.Contains(out.String(), "c1") {
+		t.Errorf("expected c1 (page 1) in output, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "c2") {
+		t.Errorf("expected c2 (page 2) in output, got: %s", out.String())
+	}
+}
+
+// TestUpdateUsesSelfLink verifies that update uses data.links.self for the PATCH URL.
+func TestUpdateUsesSelfLink(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1-canonical"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
+		{200, `{"data":{"type":"clusters","id":"c1","attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--k8s-base-hostname", "example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	}
+	if mt.calls[0].Method != http.MethodGet {
+		t.Errorf("expected first call to be GET, got %s", mt.calls[0].Method)
+	}
+	if mt.calls[1].Method != http.MethodPatch {
+		t.Errorf("expected second call to be PATCH, got %s", mt.calls[1].Method)
+	}
+	if mt.calls[1].URL.Path != "/api/v1/clusters/c1-canonical" {
+		t.Errorf("expected PATCH to use self link path /api/v1/clusters/c1-canonical, got: %s", mt.calls[1].URL.Path)
+	}
+}
+
+// TestDeleteUsesSelfLink verifies that delete uses data.links.self for the DELETE URL.
+func TestDeleteUsesSelfLink(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1-canonical"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
+		{204, ``},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"delete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	}
+	if mt.calls[1].Method != http.MethodDelete {
+		t.Errorf("expected second call to be DELETE, got %s", mt.calls[1].Method)
+	}
+	if mt.calls[1].URL.Path != "/api/v1/clusters/c1-canonical" {
+		t.Errorf("expected DELETE to use self link path /api/v1/clusters/c1-canonical, got: %s", mt.calls[1].URL.Path)
+	}
+}
+
+// TestHealthCheckUsesSelfLink verifies health-check appends to data.links.self.
+func TestHealthCheckUsesSelfLink(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1-canonical"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
+		{202, `{"data":{"type":"health_checks","id":"1","attributes":{"status":"health_check_enqueued"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"health-check"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("health-check: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	}
+	if mt.calls[1].URL.Path != "/api/v1/clusters/c1-canonical/health_check" {
+		t.Errorf("expected POST to /api/v1/clusters/c1-canonical/health_check, got: %s", mt.calls[1].URL.Path)
+	}
+}
+
+// TestFluxBootstrapUsesSelfLink verifies flux-bootstrap appends to data.links.self.
+func TestFluxBootstrapUsesSelfLink(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"clusters","id":"c1","links":{"self":"/api/v1/clusters/c1-canonical"},"attributes":{"name":"prod","cluster_type":"virtual","status":"ready"}}}`},
+		{202, `{"data":{"type":"flux_bootstraps","id":"1","attributes":{"name":"prod","flux_bootstrap_status":"bootstrapped"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"flux-bootstrap"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("flux-bootstrap: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	}
+	if mt.calls[1].URL.Path != "/api/v1/clusters/c1-canonical/flux_bootstrap" {
+		t.Errorf("expected POST to /api/v1/clusters/c1-canonical/flux_bootstrap, got: %s", mt.calls[1].URL.Path)
 	}
 }

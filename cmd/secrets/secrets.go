@@ -94,13 +94,13 @@ func newListCmd(projectID *string) *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/projects/" + url.PathEscape(*projectID) + "/secrets"
-			col, err := httpclient.GetJSONAPICollection[secretAttrs](cmd.Context(), client, path)
+			resources, err := jsonapi.GetAllPages[secretAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
 			var rows [][]string
 			var items []Secret
-			for _, r := range col.Data {
+			for _, r := range resources {
 				s := secretFromResource(r)
 				items = append(items, s)
 				rows = append(rows, secretRow(s))
@@ -163,12 +163,16 @@ func newDeleteCmd(projectID *string) *cobra.Command {
 			}
 			client := ctxutil.ClientFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
-			path := "/api/v1/projects/" + url.PathEscape(*projectID) + "/secrets/" + url.PathEscape(args[0])
+			initialPath := "/api/v1/projects/" + url.PathEscape(*projectID) + "/secrets/" + url.PathEscape(args[0])
 			if gf.DryRun {
-				_, err := cmd.OutOrStdout().Write([]byte("DELETE " + path + "\n"))
+				_, err := cmd.OutOrStdout().Write([]byte("DELETE " + initialPath + "\n"))
 				return err
 			}
-			return client.Delete(cmd.Context(), path)
+			fetched, err := jsonapi.GetSingle[secretAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			return client.Delete(cmd.Context(), jsonapi.SelfPath(fetched.SelfLink, initialPath))
 		},
 	}
 }
