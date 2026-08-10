@@ -226,6 +226,7 @@ func TestCreate_JSONAPIContentType(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"my-deploy","project_id":"p1","status":"deployed"}}}`},
 		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","project_id":"p1","cluster_id":"c1","package_name":"promtail","package_version":"2.0.0","status":"deployed"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
@@ -248,6 +249,7 @@ func TestUpdate(t *testing.T) {
 
 func TestUpdate_RequestBodyShape(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"my-deploy","project_id":"p1","status":"deployed"}}}`},
 		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","namespace":"kube-system","package_name":"promtail-new","status":"deployed"}}}`},
 	}}
 	ctx, _ := buildCtx(t, mt, true)
@@ -263,10 +265,10 @@ func TestUpdate_RequestBodyShape(t *testing.T) {
 	if err := sub.RunE(sub, []string{"d1"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if len(mt.calls) == 0 {
-		t.Fatal("expected HTTP call")
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + PATCH)")
 	}
-	raw, err := io.ReadAll(mt.calls[0].Body)
+	raw, err := io.ReadAll(mt.calls[1].Body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,6 +301,7 @@ func TestUpdate_RequestBodyShape(t *testing.T) {
 // TestUpdate_JSONAPIContentType verifies the update request sends correct media types.
 func TestUpdate_JSONAPIContentType(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"my-deploy","project_id":"p1","status":"deployed"}}}`},
 		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","status":"deployed"}}}`},
 	}}
 	ctx, _ := buildCtx(t, mt, true)
@@ -314,13 +317,13 @@ func TestUpdate_JSONAPIContentType(t *testing.T) {
 	if err := sub.RunE(sub, []string{"d1"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if len(mt.calls) == 0 {
-		t.Fatal("expected HTTP call")
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + PATCH)")
 	}
-	if got := mt.calls[0].Header.Get("Content-Type"); got != "application/vnd.api+json" {
+	if got := mt.calls[1].Header.Get("Content-Type"); got != "application/vnd.api+json" {
 		t.Errorf("Content-Type = %q, want application/vnd.api+json", got)
 	}
-	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+	if got := mt.calls[1].Header.Get("Accept"); got != "application/vnd.api+json" {
 		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
@@ -371,6 +374,7 @@ func TestUpdateNoFlags(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"my-deploy","project_id":"p1","status":"deployed"}}}`},
 		{204, ``},
 	}}
 	ctx, _ := buildCtx(t, mt, false)
@@ -388,6 +392,7 @@ func TestDelete(t *testing.T) {
 // TestDelete_JSONAPIAcceptHeader verifies that delete sends the correct Accept header.
 func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"my-deploy","project_id":"p1","status":"deployed"}}}`},
 		{204, ``},
 	}}
 	ctx, _ := buildCtx(t, mt, false)
@@ -400,10 +405,10 @@ func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
 	if err := sub.RunE(sub, []string{"d1"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if len(mt.calls) == 0 {
-		t.Fatal("expected HTTP call")
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + DELETE)")
 	}
-	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+	if got := mt.calls[1].Header.Get("Accept"); got != "application/vnd.api+json" {
 		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
@@ -421,5 +426,95 @@ func TestGet404(t *testing.T) {
 	sub.SetContext(ctx)
 	if err := sub.RunE(sub, []string{"missing"}); err == nil {
 		t.Fatal("expected error for 404")
+	}
+}
+
+// TestListFollowsNextLinks verifies that list follows links.next across multiple pages.
+func TestListFollowsNextLinks(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":[{"type":"deployments","id":"d1","attributes":{"name":"deploy1","project_id":"p1","status":"deployed"}}],"links":{"next":"/api/v1/deployments?page=2"}}`},
+		{200, `{"data":[{"type":"deployments","id":"d2","attributes":{"name":"deploy2","project_id":"p1","status":"pending"}}],"links":{}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls (one per page), got %d", len(mt.calls))
+	}
+	if !strings.Contains(mt.calls[1].URL.RawQuery, "page=2") {
+		t.Errorf("expected second call to use page=2 query, got: %s", mt.calls[1].URL.RawQuery)
+	}
+	if !strings.Contains(out.String(), "d1") {
+		t.Errorf("expected d1 (page 1) in output, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "d2") {
+		t.Errorf("expected d2 (page 2) in output, got: %s", out.String())
+	}
+}
+
+// TestUpdateUsesSelfLink verifies that update uses data.links.self for the PATCH URL.
+func TestUpdateUsesSelfLink(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1-canonical"},"attributes":{"name":"my-deploy","project_id":"p1","status":"deployed"}}}`},
+		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"my-deploy","project_id":"p1","package_version":"2.0.0","status":"deployed"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--package-version", "2.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	}
+	if mt.calls[0].Method != http.MethodGet {
+		t.Errorf("expected first call to be GET, got %s", mt.calls[0].Method)
+	}
+	if mt.calls[1].Method != http.MethodPatch {
+		t.Errorf("expected second call to be PATCH, got %s", mt.calls[1].Method)
+	}
+	if mt.calls[1].URL.Path != "/api/v1/deployments/d1-canonical" {
+		t.Errorf("expected PATCH to use self link /api/v1/deployments/d1-canonical, got: %s", mt.calls[1].URL.Path)
+	}
+}
+
+// TestDeleteUsesSelfLink verifies that delete uses data.links.self for the DELETE URL.
+func TestDeleteUsesSelfLink(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1-canonical"},"attributes":{"name":"my-deploy","project_id":"p1","status":"deployed"}}}`},
+		{204, ``},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"delete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	}
+	if mt.calls[1].Method != http.MethodDelete {
+		t.Errorf("expected second call to be DELETE, got %s", mt.calls[1].Method)
+	}
+	if mt.calls[1].URL.Path != "/api/v1/deployments/d1-canonical" {
+		t.Errorf("expected DELETE to use self link /api/v1/deployments/d1-canonical, got: %s", mt.calls[1].URL.Path)
 	}
 }

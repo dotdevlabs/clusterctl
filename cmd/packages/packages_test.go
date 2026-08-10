@@ -195,6 +195,7 @@ func TestCreate_JSONAPIContentType(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","links":{"self":"/api/v1/packages/pkg1"},"attributes":{"name":"mypackage","source_type":"helm"}}}`},
 		{200, `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"renamed","source_type":"git"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
@@ -218,6 +219,7 @@ func TestUpdate(t *testing.T) {
 // TestUpdate_JSONAPIContentType verifies the update request sends correct media types.
 func TestUpdate_JSONAPIContentType(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","links":{"self":"/api/v1/packages/pkg1"},"attributes":{"name":"mypackage","source_type":"helm"}}}`},
 		{200, `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"renamed","source_type":"git"}}}`},
 	}}
 	ctx, _ := buildCtx(t, mt, true)
@@ -233,13 +235,13 @@ func TestUpdate_JSONAPIContentType(t *testing.T) {
 	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if len(mt.calls) == 0 {
-		t.Fatal("expected HTTP call")
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + PATCH)")
 	}
-	if got := mt.calls[0].Header.Get("Content-Type"); got != "application/vnd.api+json" {
+	if got := mt.calls[1].Header.Get("Content-Type"); got != "application/vnd.api+json" {
 		t.Errorf("Content-Type = %q, want application/vnd.api+json", got)
 	}
-	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+	if got := mt.calls[1].Header.Get("Accept"); got != "application/vnd.api+json" {
 		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
@@ -260,6 +262,7 @@ func TestUpdateNoFlags(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","links":{"self":"/api/v1/packages/pkg1"},"attributes":{"name":"mypackage","source_type":"helm"}}}`},
 		{204, ``},
 	}}
 	ctx, _ := buildCtx(t, mt, false)
@@ -277,6 +280,7 @@ func TestDelete(t *testing.T) {
 // TestDelete_JSONAPIAcceptHeader verifies that delete sends the correct Accept header.
 func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","links":{"self":"/api/v1/packages/pkg1"},"attributes":{"name":"mypackage","source_type":"helm"}}}`},
 		{204, ``},
 	}}
 	ctx, _ := buildCtx(t, mt, false)
@@ -289,10 +293,10 @@ func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
 	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if len(mt.calls) == 0 {
-		t.Fatal("expected HTTP call")
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + DELETE)")
 	}
-	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+	if got := mt.calls[1].Header.Get("Accept"); got != "application/vnd.api+json" {
 		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
@@ -310,5 +314,95 @@ func TestGet404(t *testing.T) {
 	sub.SetContext(ctx)
 	if err := sub.RunE(sub, []string{"missing"}); err == nil {
 		t.Fatal("expected error for 404")
+	}
+}
+
+// TestListFollowsNextLinks verifies that list follows links.next across multiple pages.
+func TestListFollowsNextLinks(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":[{"type":"packages","id":"pkg1","attributes":{"name":"pkg1","source_type":"helm"}}],"links":{"next":"/api/v1/packages?page=2"}}`},
+		{200, `{"data":[{"type":"packages","id":"pkg2","attributes":{"name":"pkg2","source_type":"git"}}],"links":{}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls (one per page), got %d", len(mt.calls))
+	}
+	if !strings.Contains(mt.calls[1].URL.RawQuery, "page=2") {
+		t.Errorf("expected second call to use page=2 query, got: %s", mt.calls[1].URL.RawQuery)
+	}
+	if !strings.Contains(out.String(), "pkg1") {
+		t.Errorf("expected pkg1 (page 1) in output, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "pkg2") {
+		t.Errorf("expected pkg2 (page 2) in output, got: %s", out.String())
+	}
+}
+
+// TestUpdateUsesSelfLink verifies that update uses data.links.self for the PATCH URL.
+func TestUpdateUsesSelfLink(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","links":{"self":"/api/v1/packages/pkg1-canonical"},"attributes":{"name":"mypackage","source_type":"helm"}}}`},
+		{200, `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"renamed","source_type":"helm"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	}
+	if mt.calls[0].Method != http.MethodGet {
+		t.Errorf("expected first call to be GET, got %s", mt.calls[0].Method)
+	}
+	if mt.calls[1].Method != http.MethodPatch {
+		t.Errorf("expected second call to be PATCH, got %s", mt.calls[1].Method)
+	}
+	if mt.calls[1].URL.Path != "/api/v1/packages/pkg1-canonical" {
+		t.Errorf("expected PATCH to use self link /api/v1/packages/pkg1-canonical, got: %s", mt.calls[1].URL.Path)
+	}
+}
+
+// TestDeleteUsesSelfLink verifies that delete uses data.links.self for the DELETE URL.
+func TestDeleteUsesSelfLink(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","links":{"self":"/api/v1/packages/pkg1-canonical"},"attributes":{"name":"mypackage","source_type":"helm"}}}`},
+		{204, ``},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"delete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	}
+	if mt.calls[1].Method != http.MethodDelete {
+		t.Errorf("expected second call to be DELETE, got %s", mt.calls[1].Method)
+	}
+	if mt.calls[1].URL.Path != "/api/v1/packages/pkg1-canonical" {
+		t.Errorf("expected DELETE to use self link /api/v1/packages/pkg1-canonical, got: %s", mt.calls[1].URL.Path)
 	}
 }

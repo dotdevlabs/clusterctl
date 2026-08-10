@@ -108,13 +108,13 @@ func newListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
-			col, err := httpclient.GetJSONAPICollection[deploymentAttrs](cmd.Context(), client, "/api/v1/deployments")
+			resources, err := jsonapi.GetAllPages[deploymentAttrs](cmd.Context(), client, "/api/v1/deployments")
 			if err != nil {
 				return err
 			}
 			var rows [][]string
 			var items []Deployment
-			for _, r := range col.Data {
+			for _, r := range resources {
 				d := deploymentFromResource(r)
 				items = append(items, d)
 				rows = append(rows, deploymentRow(d))
@@ -133,11 +133,11 @@ func newGetCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			path := "/api/v1/deployments/" + url.PathEscape(args[0])
-			res, err := httpclient.GetJSONAPISingle[deploymentAttrs](cmd.Context(), client, path)
+			res, err := jsonapi.GetSingle[deploymentAttrs](cmd.Context(), client, path)
 			if err != nil {
 				return err
 			}
-			d := deploymentFromResource(res)
+			d := deploymentFromResource(res.Resource)
 			return renderer.Render(deploymentCols, [][]string{deploymentRow(d)}, httpclient.Envelope[Deployment]{Data: d})
 		},
 	}
@@ -246,8 +246,13 @@ func newUpdateCmd() *cobra.Command {
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
-			path := "/api/v1/deployments/" + url.PathEscape(args[0])
-			res, err := jsonapi.PatchSingle[deploymentAttrs](cmd.Context(), client, path, body)
+			initialPath := "/api/v1/deployments/" + url.PathEscape(args[0])
+			fetched, err := jsonapi.GetSingle[deploymentAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			selfPath := jsonapi.SelfPath(fetched.SelfLink, initialPath)
+			res, err := jsonapi.PatchSingle[deploymentAttrs](cmd.Context(), client, selfPath, body)
 			if err != nil {
 				return err
 			}
@@ -277,7 +282,12 @@ func newDeleteCmd() *cobra.Command {
 				_, err := cmd.OutOrStdout().Write([]byte("DELETE /api/v1/deployments/" + url.PathEscape(args[0]) + "\n"))
 				return err
 			}
-			return client.Delete(cmd.Context(), "/api/v1/deployments/"+url.PathEscape(args[0]))
+			initialPath := "/api/v1/deployments/" + url.PathEscape(args[0])
+			fetched, err := jsonapi.GetSingle[deploymentAttrs](cmd.Context(), client, initialPath)
+			if err != nil {
+				return err
+			}
+			return client.Delete(cmd.Context(), jsonapi.SelfPath(fetched.SelfLink, initialPath))
 		},
 	}
 }
