@@ -1,0 +1,1547 @@
+openapi: "3.0.3"
+info:
+  title: ClusterControl API
+  version: "1.0"
+  description: >
+    REST API for ClusterControl. All application endpoints (non-connector) accept and
+    return `application/vnd.api+json` with JSON:API-shaped bodies. Identifiers are
+    strings. Failures return a top-level `errors` array where each element has a
+    `status` (HTTP status code string) and `detail` (human-readable message). Some
+    error objects may include a `meta` object with additional machine-readable data.
+
+    Connector endpoints (paths under /connector and /connector_heartbeat) use a
+    separate per-cluster Bearer token scheme and `application/json` payloads.
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    # ── Shared error shapes ────────────────────────────────────────────────────
+    ErrorObject:
+      type: object
+      required: [status, detail]
+      properties:
+        status:
+          type: string
+          description: HTTP status code as a string
+          example: "422"
+        detail:
+          type: string
+          description: Human-readable explanation of the error
+        meta:
+          type: object
+          additionalProperties: true
+          description: Optional machine-readable metadata
+
+    ErrorsDocument:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorObject"
+
+    # ── Meta / pagination ──────────────────────────────────────────────────────
+    ListMeta:
+      type: object
+      required: [total_count]
+      properties:
+        total_count:
+          type: integer
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    AuthContextAttributes:
+      type: object
+      properties:
+        organization:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+            slug: { type: string }
+        owner:
+          type: object
+          properties:
+            id: { type: string }
+            email_address: { type: string }
+        token:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+            expires_at: { type: string, format: date-time, nullable: true }
+
+    AuthContextResource:
+      type: object
+      properties:
+        type: { type: string, enum: [auth_contexts] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/AuthContextAttributes"
+
+    AuthContextDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AuthContextResource"
+
+    # ── Registrations ─────────────────────────────────────────────────────────
+    RegistrationAttributes:
+      type: object
+      properties:
+        token: { type: string, description: "API bearer token (cc_…)" }
+        organization_id: { type: string }
+        owner_id: { type: string }
+
+    RegistrationResource:
+      type: object
+      properties:
+        type: { type: string, enum: [registrations] }
+        id: { type: string, nullable: true }
+        attributes:
+          $ref: "#/components/schemas/RegistrationAttributes"
+
+    RegistrationDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/RegistrationResource"
+
+    RegistrationRequestAttributes:
+      type: object
+      required: [owner_email, label]
+      properties:
+        owner_email:
+          type: string
+          format: email
+        label:
+          type: string
+          description: Human-readable name for the generated API token
+
+    RegistrationRequest:
+      description: >
+        Flat params (no JSON:API envelope) — this endpoint is unauthenticated and
+        used by CLI / connector bootstrapping tools that may not speak JSON:API.
+      type: object
+      required: [owner_email, label]
+      properties:
+        owner_email:
+          type: string
+          format: email
+        label:
+          type: string
+
+    # ── Projects ──────────────────────────────────────────────────────────────
+    ProjectAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        v_cluster_id: { type: string, nullable: true }
+        gitops_repo_name: { type: string, nullable: true }
+        github_pat_id: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    ProjectResource:
+      type: object
+      properties:
+        type: { type: string, enum: [projects] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/ProjectAttributes"
+
+    ProjectDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProjectResource"
+
+    ProjectListDocument:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectResource"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+
+    ProjectRequestAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        v_cluster_id: { type: string, nullable: true }
+        github_pat_id: { type: string, nullable: true }
+
+    ProjectRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [projects] }
+            attributes:
+              $ref: "#/components/schemas/ProjectRequestAttributes"
+
+    # ── Clusters ──────────────────────────────────────────────────────────────
+    ClusterAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        cluster_type: { type: string, enum: [virtual, imported] }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        # virtual-only
+        parent_cluster_id: { type: string, nullable: true }
+        namespace: { type: string, nullable: true }
+        error_message: { type: string, nullable: true }
+        provisioning_message: { type: string, nullable: true }
+        provisioning_started_at: { type: string, format: date-time, nullable: true }
+        provisioning_completed_at: { type: string, format: date-time, nullable: true }
+        flux_bootstrap_status: { type: string, nullable: true }
+        flux_bootstrap_error: { type: string, nullable: true }
+        flux_bootstrap_started_at: { type: string, format: date-time, nullable: true }
+        flux_bootstrap_completed_at: { type: string, format: date-time, nullable: true }
+        # imported-only
+        gitops_repo_url: { type: string, nullable: true }
+        health_status: { type: string, nullable: true }
+        health_check_error: { type: string, nullable: true }
+        last_health_check_at: { type: string, format: date-time, nullable: true }
+        api_endpoint: { type: string, nullable: true }
+        platform_bootstrap_status: { type: string, nullable: true }
+        platform_bootstrap_error: { type: string, nullable: true }
+        k8s_base_hostname: { type: string, nullable: true }
+        kubeconfig_export_namespace: { type: string, nullable: true }
+        cluster_issuer_name: { type: string, nullable: true }
+        ingress_class_name: { type: string, nullable: true }
+
+    ClusterResource:
+      type: object
+      properties:
+        type: { type: string, enum: [clusters] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/ClusterAttributes"
+
+    ClusterDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ClusterResource"
+
+    ClusterListDocument:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClusterResource"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+
+    ClusterCreateRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [clusters] }
+            attributes:
+              type: object
+              required: [cluster_type]
+              properties:
+                cluster_type: { type: string, enum: [virtual, imported] }
+                name: { type: string }
+                parent_cluster_id: { type: string, description: "Required for virtual clusters" }
+                kubeconfig: { type: string }
+                gitops_repo_url: { type: string }
+                k8s_base_hostname: { type: string }
+                kubeconfig_export_namespace: { type: string }
+                cluster_issuer_name: { type: string }
+                ingress_class_name: { type: string }
+
+    ClusterUpdateRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [clusters] }
+            attributes:
+              type: object
+              properties:
+                k8s_base_hostname: { type: string }
+                kubeconfig_export_namespace: { type: string }
+                cluster_issuer_name: { type: string }
+                ingress_class_name: { type: string }
+                gitops_repo_url: { type: string }
+                kubeconfig: { type: string }
+
+    # ── Secrets ───────────────────────────────────────────────────────────────
+    SecretAttributes:
+      type: object
+      properties:
+        kubernetes_secret_name: { type: string }
+        key: { type: string }
+        created_at: { type: string, format: date-time }
+
+    SecretResource:
+      type: object
+      properties:
+        type: { type: string, enum: [project_secrets] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/SecretAttributes"
+
+    SecretDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SecretResource"
+
+    SecretListDocument:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecretResource"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+
+    SecretRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [project_secrets] }
+            attributes:
+              type: object
+              required: [kubernetes_secret_name, key, value]
+              properties:
+                kubernetes_secret_name: { type: string }
+                key: { type: string }
+                value: { type: string }
+
+    # ── Secret Materializations ───────────────────────────────────────────────
+    SecretMaterializationAttributes:
+      type: object
+      properties:
+        applied_count: { type: integer }
+        message: { type: string }
+
+    SecretMaterializationResource:
+      type: object
+      properties:
+        type: { type: string, enum: [secret_materializations] }
+        id: { type: string, nullable: true }
+        attributes:
+          $ref: "#/components/schemas/SecretMaterializationAttributes"
+
+    SecretMaterializationDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/SecretMaterializationResource"
+
+    # ── Packages ──────────────────────────────────────────────────────────────
+    PackageAttributes:
+      type: object
+      properties:
+        organization_id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        source_type: { type: string }
+        source_url: { type: string }
+        source_branch: { type: string, nullable: true }
+        source_path: { type: string, nullable: true }
+        source_chart: { type: string, nullable: true }
+        source_tag_pattern: { type: string, nullable: true }
+        tags: { type: array, items: { type: string } }
+        versions: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PackageResource:
+      type: object
+      properties:
+        type: { type: string, enum: [packages] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/PackageAttributes"
+
+    PackageDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/PackageResource"
+
+    PackageListDocument:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageResource"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+
+    PackageRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [packages] }
+            attributes:
+              type: object
+              required: [name, source_type, source_url]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                source_type: { type: string }
+                source_url: { type: string }
+                source_branch: { type: string }
+                source_path: { type: string }
+                source_chart: { type: string }
+                source_tag_pattern: { type: string }
+                tags:
+                  type: array
+                  items: { type: string }
+
+    # ── Deployments ───────────────────────────────────────────────────────────
+    DeploymentAttributes:
+      type: object
+      properties:
+        project_id: { type: string }
+        cluster_id: { type: string, nullable: true }
+        name: { type: string }
+        namespace: { type: string }
+        package_name: { type: string }
+        package_version: { type: string }
+        environment_preset: { type: string, nullable: true }
+        values_override: { type: string, nullable: true }
+        status: { type: string }
+        is_ai: { type: boolean }
+        hpa_enabled: { type: boolean }
+        scaling_mode: { type: string }
+        min_replicas: { type: integer, nullable: true }
+        max_replicas: { type: integer, nullable: true }
+        desired_replicas: { type: integer, nullable: true }
+        cpu_target_utilization: { type: integer, nullable: true }
+        memory_target_utilization: { type: integer, nullable: true }
+        cpu_request: { type: string, nullable: true }
+        cpu_limit: { type: string, nullable: true }
+        memory_request: { type: string, nullable: true }
+        memory_limit: { type: string, nullable: true }
+        scaling_profile: { type: string, nullable: true }
+        placement_policy: { type: string, nullable: true }
+        canary_enabled: { type: boolean }
+        canary_step_weight: { type: integer, nullable: true }
+        canary_interval: { type: string, nullable: true }
+        canary_max_weight: { type: integer, nullable: true }
+        canary_success_threshold: { type: number, nullable: true }
+        canary_error_threshold: { type: number, nullable: true }
+        canary_latency_p99_ms: { type: integer, nullable: true }
+        node_selector: { type: object, additionalProperties: { type: string }, nullable: true }
+        tolerations: { type: array, items: { type: object }, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        # show-only flux fields
+        gitops_sync_status: { type: string, nullable: true }
+        gitops_source_repo: { type: string, nullable: true }
+        gitops_base_path: { type: string, nullable: true }
+        gitops_current_revision: { type: string, nullable: true }
+        gitops_last_reconciled_at: { type: string, format: date-time, nullable: true }
+        gitops_github_files_url: { type: string, nullable: true }
+        publish_error: { type: string, nullable: true, description: "GitOps publish error from create/update" }
+
+    DeploymentResource:
+      type: object
+      properties:
+        type: { type: string, enum: [deployments] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/DeploymentAttributes"
+
+    DeploymentDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/DeploymentResource"
+
+    DeploymentListDocument:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeploymentResource"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+
+    DeploymentRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [deployments] }
+            attributes:
+              type: object
+              required: [project_id, name, namespace, package_name, package_version]
+              properties:
+                project_id: { type: string }
+                cluster_id: { type: string }
+                name: { type: string }
+                namespace: { type: string }
+                package_name: { type: string }
+                package_version: { type: string }
+                environment_preset: { type: string }
+                values_override: { type: string }
+                is_ai: { type: boolean }
+                scaling_mode: { type: string }
+                min_replicas: { type: integer }
+                max_replicas: { type: integer }
+                desired_replicas: { type: integer }
+                cpu_target_utilization: { type: integer }
+                memory_target_utilization: { type: integer }
+                cpu_request: { type: string }
+                cpu_limit: { type: string }
+                memory_request: { type: string }
+                memory_limit: { type: string }
+                scaling_profile: { type: string }
+                placement_policy: { type: string }
+                canary_enabled: { type: boolean }
+                canary_step_weight: { type: integer }
+                canary_interval: { type: string }
+                canary_max_weight: { type: integer }
+                canary_success_threshold: { type: number }
+                canary_error_threshold: { type: number }
+                canary_latency_p99_ms: { type: integer }
+                node_selector: { type: object, additionalProperties: { type: string } }
+                tolerations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key: { type: string }
+                      operator: { type: string }
+                      value: { type: string }
+                      effect: { type: string }
+
+    # ── Templates ─────────────────────────────────────────────────────────────
+    TemplateInput:
+      type: object
+      properties:
+        key: { type: string }
+        type: { type: string }
+        default: { nullable: true }
+        required: { type: boolean }
+        description: { type: string, nullable: true }
+
+    TemplateAttributes:
+      type: object
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        resource_names: { type: array, items: { type: string } }
+        inputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateInput"
+
+    TemplateResource:
+      type: object
+      properties:
+        type: { type: string, enum: [templates] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/TemplateAttributes"
+
+    TemplateDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/TemplateResource"
+
+    TemplateListDocument:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateResource"
+        meta:
+          $ref: "#/components/schemas/ListMeta"
+
+    # ── Health Checks ─────────────────────────────────────────────────────────
+    HealthCheckResource:
+      type: object
+      properties:
+        type: { type: string, enum: [health_checks] }
+        id: { type: string }
+        attributes:
+          type: object
+          properties:
+            status: { type: string, example: health_check_enqueued }
+
+    HealthCheckDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/HealthCheckResource"
+
+    # ── Provisionings ─────────────────────────────────────────────────────────
+    ProvisioningAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        status: { type: string }
+        error_message: { type: string, nullable: true }
+        provisioning_message: { type: string, nullable: true }
+        provisioning_started_at: { type: string, format: date-time, nullable: true }
+        provisioning_completed_at: { type: string, format: date-time, nullable: true }
+
+    ProvisioningResource:
+      type: object
+      properties:
+        type: { type: string, enum: [provisionings] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/ProvisioningAttributes"
+
+    ProvisioningDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ProvisioningResource"
+
+    # ── Flux Bootstraps ───────────────────────────────────────────────────────
+    FluxBootstrapAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        flux_bootstrap_status: { type: string }
+        flux_bootstrap_error: { type: string, nullable: true }
+        flux_bootstrap_started_at: { type: string, format: date-time, nullable: true }
+        flux_bootstrap_completed_at: { type: string, format: date-time, nullable: true }
+        reconciliation:
+          type: object
+          nullable: true
+          properties:
+            health: { type: string }
+            sources: { type: array, items: { type: object } }
+            kustomizations: { type: array, items: { type: object } }
+
+    FluxBootstrapResource:
+      type: object
+      properties:
+        type: { type: string, enum: [flux_bootstraps] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/FluxBootstrapAttributes"
+
+    FluxBootstrapDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/FluxBootstrapResource"
+
+    # ── Exposures ─────────────────────────────────────────────────────────────
+    ExposureResource:
+      type: object
+      properties:
+        type: { type: string, enum: [exposures] }
+        id: { type: string }
+        attributes:
+          type: object
+          properties:
+            name: { type: string }
+            status: { type: string }
+
+    ExposureDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/ExposureResource"
+
+    # ── Connector payloads (application/json) ─────────────────────────────────
+    ConnectorStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API token
+      content:
+        application/vnd.api+json:
+          schema:
+            $ref: "#/components/schemas/ErrorsDocument"
+
+    Forbidden:
+      description: Authenticated but not authorized
+      content:
+        application/vnd.api+json:
+          schema:
+            $ref: "#/components/schemas/ErrorsDocument"
+
+    NotFound:
+      description: Resource not found or not accessible within the authenticated organization
+      content:
+        application/vnd.api+json:
+          schema:
+            $ref: "#/components/schemas/ErrorsDocument"
+
+    UnprocessableEntity:
+      description: Validation failed
+      content:
+        application/vnd.api+json:
+          schema:
+            $ref: "#/components/schemas/ErrorsDocument"
+
+    PaymentRequired:
+      description: Plan limit exceeded
+      content:
+        application/vnd.api+json:
+          schema:
+            $ref: "#/components/schemas/ErrorsDocument"
+
+    NoContent:
+      description: Resource deleted; no body returned
+
+paths:
+  # ── Auth ────────────────────────────────────────────────────────────────────
+  /auth:
+    get:
+      operationId: getAuth
+      summary: Verify API token and return identity
+      tags: [Auth]
+      responses:
+        "200":
+          description: Token identity
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/AuthContextDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Registrations ────────────────────────────────────────────────────────────
+  /registrations:
+    post:
+      operationId: createRegistration
+      summary: Register a new organization and API token
+      security: []
+      tags: [Registrations]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/RegistrationRequest"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationRequest"
+      responses:
+        "201":
+          description: Registration successful
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/RegistrationDocument"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  # ── Clusters ─────────────────────────────────────────────────────────────────
+  /clusters:
+    get:
+      operationId: listClusters
+      summary: List clusters for the authenticated organization
+      tags: [Clusters]
+      responses:
+        "200":
+          description: Cluster list
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ClusterListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createCluster
+      summary: Create a virtual or imported cluster
+      tags: [Clusters]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/ClusterCreateRequest"
+      responses:
+        "201":
+          description: Cluster created
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ClusterDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /clusters/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getCluster
+      summary: Get a cluster by ID
+      tags: [Clusters]
+      responses:
+        "200":
+          description: Cluster
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ClusterDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateCluster
+      summary: Update cluster attributes
+      tags: [Clusters]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/ClusterUpdateRequest"
+      responses:
+        "200":
+          description: Cluster updated
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ClusterDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      operationId: deleteCluster
+      summary: Destroy a virtual cluster (enqueues teardown)
+      tags: [Clusters]
+      responses:
+        "204":
+          $ref: "#/components/responses/NoContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /clusters/{cluster_id}/health_check:
+    parameters:
+      - name: cluster_id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: createClusterHealthCheck
+      summary: Enqueue a health check for an imported cluster
+      tags: [Clusters]
+      responses:
+        "202":
+          description: Health check enqueued
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/HealthCheckDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /clusters/{cluster_id}/provisioning:
+    parameters:
+      - name: cluster_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getClusterProvisioning
+      summary: Get provisioning status for a virtual cluster
+      tags: [Clusters]
+      responses:
+        "200":
+          description: Provisioning status
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ProvisioningDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /clusters/{cluster_id}/flux_bootstrap:
+    parameters:
+      - name: cluster_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getClusterFluxBootstrap
+      summary: Get Flux bootstrap status for a virtual cluster
+      tags: [Clusters]
+      responses:
+        "200":
+          description: Flux bootstrap status
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/FluxBootstrapDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createClusterFluxBootstrap
+      summary: Trigger a Flux bootstrap for a virtual cluster
+      tags: [Clusters]
+      responses:
+        "202":
+          description: Bootstrap enqueued
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/FluxBootstrapDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /clusters/{cluster_id}/exposure:
+    parameters:
+      - name: cluster_id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: createClusterExposure
+      summary: Expose a virtual cluster via the host's ingress
+      tags: [Clusters]
+      responses:
+        "202":
+          description: Exposure job enqueued
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ExposureDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  # ── Projects ─────────────────────────────────────────────────────────────────
+  /projects:
+    get:
+      operationId: listProjects
+      summary: List projects for the authenticated organization
+      tags: [Projects]
+      responses:
+        "200":
+          description: Project list
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ProjectListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createProject
+      summary: Create a project
+      tags: [Projects]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/ProjectRequest"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ProjectDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /projects/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getProject
+      summary: Get a project by ID
+      tags: [Projects]
+      responses:
+        "200":
+          description: Project
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ProjectDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateProject
+      summary: Update a project
+      tags: [Projects]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/ProjectRequest"
+      responses:
+        "200":
+          description: Project updated
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ProjectDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      operationId: deleteProject
+      summary: Delete a project
+      tags: [Projects]
+      responses:
+        "204":
+          $ref: "#/components/responses/NoContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{project_id}/secrets:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: listProjectSecrets
+      summary: List secrets for a project (values are never returned)
+      tags: [Secrets]
+      responses:
+        "200":
+          description: Secret list
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/SecretListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createProjectSecret
+      summary: Create a secret for a project
+      tags: [Secrets]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/SecretRequest"
+      responses:
+        "201":
+          description: Secret created (value is not returned)
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/SecretDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /projects/{project_id}/secrets/{id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: { type: string }
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      operationId: deleteProjectSecret
+      summary: Delete a project secret
+      tags: [Secrets]
+      responses:
+        "204":
+          $ref: "#/components/responses/NoContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /projects/{project_id}/secret_materialization:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: createSecretMaterialization
+      summary: Apply project secrets to the linked vCluster as Kubernetes Secrets
+      tags: [Secrets]
+      responses:
+        "200":
+          description: Materialization result
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/SecretMaterializationDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  # ── Packages ─────────────────────────────────────────────────────────────────
+  /packages:
+    get:
+      operationId: listPackages
+      summary: List packages for the authenticated organization
+      tags: [Packages]
+      responses:
+        "200":
+          description: Package list
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createPackage
+      summary: Create a package
+      tags: [Packages]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/PackageRequest"
+      responses:
+        "201":
+          description: Package created
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /packages/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getPackage
+      summary: Get a package by ID
+      tags: [Packages]
+      responses:
+        "200":
+          description: Package
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updatePackage
+      summary: Update a package
+      tags: [Packages]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/PackageRequest"
+      responses:
+        "200":
+          description: Package updated
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      operationId: deletePackage
+      summary: Delete a package
+      tags: [Packages]
+      responses:
+        "204":
+          $ref: "#/components/responses/NoContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Deployments ──────────────────────────────────────────────────────────────
+  /deployments:
+    get:
+      operationId: listDeployments
+      summary: List deployments across all projects in the authenticated organization
+      tags: [Deployments]
+      responses:
+        "200":
+          description: Deployment list (no flux fields)
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/DeploymentListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createDeployment
+      summary: Create a deployment
+      tags: [Deployments]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/DeploymentRequest"
+      responses:
+        "201":
+          description: Deployment created
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/DeploymentDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /deployments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getDeployment
+      summary: Get a deployment by ID (includes flux status fields)
+      tags: [Deployments]
+      responses:
+        "200":
+          description: Deployment with flux fields
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/DeploymentDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateDeployment
+      summary: Update a deployment
+      tags: [Deployments]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/DeploymentRequest"
+      responses:
+        "200":
+          description: Deployment updated
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/DeploymentDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      operationId: deleteDeployment
+      summary: Delete a deployment
+      tags: [Deployments]
+      responses:
+        "204":
+          $ref: "#/components/responses/NoContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Templates ────────────────────────────────────────────────────────────────
+  /templates:
+    get:
+      operationId: listTemplates
+      summary: List available deployment templates
+      tags: [Templates]
+      responses:
+        "200":
+          description: Template list
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/TemplateListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /templates/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getTemplate
+      summary: Get a template by ID
+      tags: [Templates]
+      responses:
+        "200":
+          description: Template
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/TemplateDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Connector Endpoints (application/json, per-cluster auth) ─────────────────
+  /connector_heartbeat:
+    post:
+      operationId: connectorHeartbeatLegacy
+      summary: Legacy connector heartbeat (kept for backward compatibility)
+      description: >
+        Called by in-cluster connector agents. Uses a per-cluster Bearer token,
+        not the API token scheme. Returns application/json.
+      security:
+        - bearerAuth: []
+      tags: [Connector]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Heartbeat accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorStatusResponse"
+        "401":
+          description: Invalid connector token
+
+  /connector/heartbeat:
+    post:
+      operationId: connectorHeartbeat
+      summary: Connector heartbeat
+      description: >
+        Called by in-cluster connector agents. Uses a per-cluster Bearer token.
+        Returns application/json.
+      security:
+        - bearerAuth: []
+      tags: [Connector]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Heartbeat accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorStatusResponse"
+        "401":
+          description: Invalid connector token
+
+  /connector/inventory:
+    post:
+      operationId: connectorInventory
+      summary: Connector inventory report
+      description: >
+        Called by in-cluster connector agents to report cluster inventory.
+        Returns application/json.
+      security:
+        - bearerAuth: []
+      tags: [Connector]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Inventory accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorStatusResponse"
+        "401":
+          description: Invalid connector token
+
+  /connector/flux_events:
+    post:
+      operationId: connectorFluxEvents
+      summary: Connector Flux events report
+      description: >
+        Called by in-cluster connector agents to report Flux reconciliation events.
+        Returns application/json.
+      security:
+        - bearerAuth: []
+      tags: [Connector]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Events accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorStatusResponse"
+        "401":
+          description: Invalid connector token
+
+  /connector/flagger_events:
+    post:
+      operationId: connectorFlaggerEvents
+      summary: Connector Flagger events report
+      description: >
+        Called by in-cluster connector agents to report Flagger canary events.
+        Returns application/json.
+      security:
+        - bearerAuth: []
+      tags: [Connector]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Events accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorStatusResponse"
+        "401":
+          description: Invalid connector token

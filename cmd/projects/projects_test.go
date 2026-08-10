@@ -3,6 +3,7 @@ package projects_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/clusterctl/cmd/projects"
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
 type mockTransport struct {
@@ -38,7 +40,7 @@ func (m *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func buildCtx(t *testing.T, transport http.RoundTripper, jsonMode bool) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	client := httpclient.NewWithTransport("https://example.com", "tok", transport)
+	client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: transport})
 	renderer := output.New(jsonMode, "", &out, &errOut)
 	ctx := context.Background()
 	ctx = ctxutil.WithClient(ctx, client)
@@ -114,9 +116,83 @@ func TestCreate(t *testing.T) {
 	}
 }
 
+// TestCreate_JSONAPIBodyEnvelope verifies the create request body is a JSON:API envelope.
+func TestCreate_JSONAPIBodyEnvelope(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"projects","id":"p2","attributes":{"name":"newproject"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := projects.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "newproject"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be an object, got: %T", body["data"])
+	}
+	if data["type"] != "projects" {
+		t.Errorf("expected data.type=projects, got %v", data["type"])
+	}
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be an object, got: %T", data["attributes"])
+	}
+	if attrs["name"] != "newproject" {
+		t.Errorf("expected name=newproject, got %v", attrs["name"])
+	}
+}
+
+// TestCreate_JSONAPIContentType verifies the create request sends correct media types.
+func TestCreate_JSONAPIContentType(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"projects","id":"p2","attributes":{"name":"newproject"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := projects.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "newproject"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if got := mt.calls[0].Header.Get("Content-Type"); got != "application/vnd.api+json" {
+		t.Errorf("Content-Type = %q, want application/vnd.api+json", got)
+	}
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want application/vnd.api+json", got)
+	}
+}
+
 func TestUpdate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"id":"p1","name":"renamed"}}`},
+		{200, `{"data":{"type":"projects","id":"p1","attributes":{"name":"renamed"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := projects.NewCommand()
@@ -133,6 +209,35 @@ func TestUpdate(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "renamed") {
 		t.Errorf("expected renamed in output, got: %s", out.String())
+	}
+}
+
+// TestUpdate_JSONAPIContentType verifies the update request sends correct media types.
+func TestUpdate_JSONAPIContentType(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"projects","id":"p1","attributes":{"name":"renamed"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := projects.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"p1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if got := mt.calls[0].Header.Get("Content-Type"); got != "application/vnd.api+json" {
+		t.Errorf("Content-Type = %q, want application/vnd.api+json", got)
+	}
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
 
@@ -164,6 +269,29 @@ func TestDelete(t *testing.T) {
 	sub.SetContext(ctx)
 	if err := sub.RunE(sub, []string{"p1"}); err != nil {
 		t.Fatalf("delete: %v", err)
+	}
+}
+
+// TestDelete_JSONAPIAcceptHeader verifies that delete sends the correct Accept header.
+func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{204, ``},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := projects.NewCommand()
+	sub, _, err := parent.Find([]string{"delete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"p1"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
 

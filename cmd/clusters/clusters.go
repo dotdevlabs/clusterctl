@@ -2,7 +2,6 @@
 package clusters
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -13,7 +12,11 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
+
+const clusterResourceType = "clusters"
 
 // Cluster is the API response shape for a cluster resource.
 type Cluster struct {
@@ -48,10 +51,39 @@ func clusterFromResource(r httpclient.Resource[clusterAttrs]) Cluster {
 	}
 }
 
-type createClusterRequest struct {
-	Name            string `json:"name"`
-	ClusterType     string `json:"cluster_type"`
-	ParentClusterID string `json:"parent_cluster_id,omitempty"`
+// createClusterAttrs matches ClusterCreateRequest.data.attributes in the spec.
+type createClusterAttrs struct {
+	ClusterType               string `json:"cluster_type"`
+	Name                      string `json:"name,omitempty"`
+	ParentClusterID           string `json:"parent_cluster_id,omitempty"`
+	Kubeconfig                string `json:"kubeconfig,omitempty"`
+	GitopsRepoURL             string `json:"gitops_repo_url,omitempty"`
+	K8sBaseHostname           string `json:"k8s_base_hostname,omitempty"`
+	KubeconfigExportNamespace string `json:"kubeconfig_export_namespace,omitempty"`
+	ClusterIssuerName         string `json:"cluster_issuer_name,omitempty"`
+	IngressClassName          string `json:"ingress_class_name,omitempty"`
+}
+
+// updateClusterAttrs matches ClusterUpdateRequest.data.attributes in the spec.
+type updateClusterAttrs struct {
+	K8sBaseHostname           string `json:"k8s_base_hostname,omitempty"`
+	KubeconfigExportNamespace string `json:"kubeconfig_export_namespace,omitempty"`
+	ClusterIssuerName         string `json:"cluster_issuer_name,omitempty"`
+	IngressClassName          string `json:"ingress_class_name,omitempty"`
+	GitopsRepoURL             string `json:"gitops_repo_url,omitempty"`
+	Kubeconfig                string `json:"kubeconfig,omitempty"`
+}
+
+// healthCheckAttrs matches HealthCheckResource.attributes in the spec.
+type healthCheckAttrs struct {
+	Status string `json:"status"`
+}
+
+// fluxBootstrapAttrs matches FluxBootstrapAttributes in the spec.
+type fluxBootstrapAttrs struct {
+	Name                string `json:"name,omitempty"`
+	FluxBootstrapStatus string `json:"flux_bootstrap_status,omitempty"`
+	FluxBootstrapError  string `json:"flux_bootstrap_error,omitempty"`
 }
 
 var clusterCols = []output.Column{
@@ -128,6 +160,8 @@ func newGetCmd() *cobra.Command {
 
 func newCreateCmd() *cobra.Command {
 	var name, clusterType, parentClusterID string
+	var kubeconfig, gitopsRepoURL, k8sBaseHostname string
+	var kubeconfigExportNamespace, clusterIssuerName, ingressClassName string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new cluster",
@@ -136,11 +170,17 @@ func newCreateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := createClusterRequest{
-				Name:            name,
-				ClusterType:     clusterType,
-				ParentClusterID: parentClusterID,
-			}
+			body := jsonapi.Wrap(clusterResourceType, createClusterAttrs{
+				ClusterType:               clusterType,
+				Name:                      name,
+				ParentClusterID:           parentClusterID,
+				Kubeconfig:                kubeconfig,
+				GitopsRepoURL:             gitopsRepoURL,
+				K8sBaseHostname:           k8sBaseHostname,
+				KubeconfigExportNamespace: kubeconfigExportNamespace,
+				ClusterIssuerName:         clusterIssuerName,
+				IngressClassName:          ingressClassName,
+			})
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
@@ -155,9 +195,12 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Cluster name")
 	cmd.Flags().StringVar(&clusterType, "cluster-type", "", "Cluster type (virtual|imported)")
 	cmd.Flags().StringVar(&parentClusterID, "parent-cluster-id", "", "Parent cluster ID (for virtual clusters)")
-	if err := cmd.MarkFlagRequired("name"); err != nil {
-		panic(err)
-	}
+	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Kubeconfig YAML")
+	cmd.Flags().StringVar(&gitopsRepoURL, "gitops-repo-url", "", "GitOps repository URL")
+	cmd.Flags().StringVar(&k8sBaseHostname, "k8s-base-hostname", "", "Kubernetes base hostname")
+	cmd.Flags().StringVar(&kubeconfigExportNamespace, "kubeconfig-export-namespace", "", "Namespace for kubeconfig export")
+	cmd.Flags().StringVar(&clusterIssuerName, "cluster-issuer-name", "", "Cluster issuer name")
+	cmd.Flags().StringVar(&ingressClassName, "ingress-class-name", "", "Ingress class name")
 	if err := cmd.MarkFlagRequired("cluster-type"); err != nil {
 		panic(err)
 	}
@@ -165,7 +208,8 @@ func newCreateCmd() *cobra.Command {
 }
 
 func newUpdateCmd() *cobra.Command {
-	var name, clusterType, parentClusterID string
+	var k8sBaseHostname, kubeconfigExportNamespace, clusterIssuerName string
+	var ingressClassName, gitopsRepoURL, kubeconfig string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a cluster",
@@ -175,33 +219,54 @@ func newUpdateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := map[string]any{}
-			if cmd.Flags().Changed("name") {
-				body["name"] = name
+			attrs := updateClusterAttrs{}
+			anyChanged := false
+			if cmd.Flags().Changed("k8s-base-hostname") {
+				attrs.K8sBaseHostname = k8sBaseHostname
+				anyChanged = true
 			}
-			if cmd.Flags().Changed("cluster-type") {
-				body["cluster_type"] = clusterType
+			if cmd.Flags().Changed("kubeconfig-export-namespace") {
+				attrs.KubeconfigExportNamespace = kubeconfigExportNamespace
+				anyChanged = true
 			}
-			if cmd.Flags().Changed("parent-cluster-id") {
-				body["parent_cluster_id"] = parentClusterID
+			if cmd.Flags().Changed("cluster-issuer-name") {
+				attrs.ClusterIssuerName = clusterIssuerName
+				anyChanged = true
 			}
-			if len(body) == 0 {
+			if cmd.Flags().Changed("ingress-class-name") {
+				attrs.IngressClassName = ingressClassName
+				anyChanged = true
+			}
+			if cmd.Flags().Changed("gitops-repo-url") {
+				attrs.GitopsRepoURL = gitopsRepoURL
+				anyChanged = true
+			}
+			if cmd.Flags().Changed("kubeconfig") {
+				attrs.Kubeconfig = kubeconfig
+				anyChanged = true
+			}
+			if !anyChanged {
 				return clierror.New(clierror.CodeUsage, "at least one flag required for update", "")
 			}
+			body := jsonapi.Wrap(clusterResourceType, attrs)
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
 			path := "/api/v1/clusters/" + url.PathEscape(args[0])
-			env, err := patchEnvelope[Cluster](cmd.Context(), client, path, body)
+			res, err := jsonapi.PatchSingle[clusterAttrs](cmd.Context(), client, path, body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(clusterCols, [][]string{clusterRow(env.Data)}, env)
+			c := clusterFromResource(res)
+			return renderer.Render(clusterCols, [][]string{clusterRow(c)}, httpclient.Envelope[Cluster]{Data: c})
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "Cluster name")
-	cmd.Flags().StringVar(&clusterType, "cluster-type", "", "Cluster type")
-	cmd.Flags().StringVar(&parentClusterID, "parent-cluster-id", "", "Parent cluster ID")
+	cmd.Flags().StringVar(&k8sBaseHostname, "k8s-base-hostname", "", "Kubernetes base hostname")
+	cmd.Flags().StringVar(&kubeconfigExportNamespace, "kubeconfig-export-namespace", "", "Namespace for kubeconfig export")
+	cmd.Flags().StringVar(&clusterIssuerName, "cluster-issuer-name", "", "Cluster issuer name")
+	cmd.Flags().StringVar(&ingressClassName, "ingress-class-name", "", "Ingress class name")
+	cmd.Flags().StringVar(&gitopsRepoURL, "gitops-repo-url", "", "GitOps repository URL")
+	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Kubeconfig YAML")
 	return cmd
 }
 
@@ -234,14 +299,14 @@ func newHealthCheckCmd() *cobra.Command {
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/clusters/%s/health_check\n", url.PathEscape(args[0]))
 				return err
 			}
-			var resp map[string]any
 			path := "/api/v1/clusters/" + url.PathEscape(args[0]) + "/health_check"
-			if err := client.Post(cmd.Context(), path, nil, &resp); err != nil {
+			res, err := httpclient.PostJSONAPISingle[healthCheckAttrs](cmd.Context(), client, path, nil)
+			if err != nil {
 				return err
 			}
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(resp)
+			return enc.Encode(res.Attributes)
 		},
 	}
 }
@@ -258,22 +323,14 @@ func newFluxBootstrapCmd() *cobra.Command {
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/clusters/%s/flux_bootstrap\n", url.PathEscape(args[0]))
 				return err
 			}
-			var resp map[string]any
 			path := "/api/v1/clusters/" + url.PathEscape(args[0]) + "/flux_bootstrap"
-			if err := client.Post(cmd.Context(), path, nil, &resp); err != nil {
+			res, err := httpclient.PostJSONAPISingle[fluxBootstrapAttrs](cmd.Context(), client, path, nil)
+			if err != nil {
 				return err
 			}
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(resp)
+			return enc.Encode(res.Attributes)
 		},
 	}
-}
-
-func patchEnvelope[T any](ctx context.Context, client *httpclient.Client, path string, body any) (httpclient.Envelope[T], error) {
-	var env httpclient.Envelope[T]
-	if err := client.Patch(ctx, path, body, &env); err != nil {
-		return httpclient.Envelope[T]{}, err
-	}
-	return env, nil
 }

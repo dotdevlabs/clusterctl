@@ -2,7 +2,6 @@
 package packages
 
 import (
-	"context"
 	"net/url"
 
 	"github.com/spf13/cobra"
@@ -11,28 +10,36 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
+
+const packageResourceType = "packages"
 
 // Package is the API response shape for a package resource.
 type Package struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
 	SourceType   string `json:"source_type,omitempty"`
 	SourceURL    string `json:"source_url,omitempty"`
 	SourceBranch string `json:"source_branch,omitempty"`
 	SourcePath   string `json:"source_path,omitempty"`
 	SourceChart  string `json:"source_chart,omitempty"`
+	SourceTagPat string `json:"source_tag_pattern,omitempty"`
 	CreatedAt    string `json:"created_at,omitempty"`
 	UpdatedAt    string `json:"updated_at,omitempty"`
 }
 
 type packageAttrs struct {
 	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
 	SourceType   string `json:"source_type,omitempty"`
 	SourceURL    string `json:"source_url,omitempty"`
 	SourceBranch string `json:"source_branch,omitempty"`
 	SourcePath   string `json:"source_path,omitempty"`
 	SourceChart  string `json:"source_chart,omitempty"`
+	SourceTagPat string `json:"source_tag_pattern,omitempty"`
 	CreatedAt    string `json:"created_at,omitempty"`
 	UpdatedAt    string `json:"updated_at,omitempty"`
 }
@@ -42,23 +49,28 @@ func packageFromResource(r httpclient.Resource[packageAttrs]) Package {
 	return Package{
 		ID:           r.ID,
 		Name:         a.Name,
+		Description:  a.Description,
 		SourceType:   a.SourceType,
 		SourceURL:    a.SourceURL,
 		SourceBranch: a.SourceBranch,
 		SourcePath:   a.SourcePath,
 		SourceChart:  a.SourceChart,
+		SourceTagPat: a.SourceTagPat,
 		CreatedAt:    a.CreatedAt,
 		UpdatedAt:    a.UpdatedAt,
 	}
 }
 
-type createPackageRequest struct {
-	Name         string `json:"name"`
+// packageRequestAttrs matches PackageRequest.data.attributes in the spec.
+type packageRequestAttrs struct {
+	Name         string `json:"name,omitempty"`
+	Description  string `json:"description,omitempty"`
 	SourceType   string `json:"source_type,omitempty"`
 	SourceURL    string `json:"source_url,omitempty"`
 	SourceBranch string `json:"source_branch,omitempty"`
 	SourcePath   string `json:"source_path,omitempty"`
 	SourceChart  string `json:"source_chart,omitempty"`
+	SourceTagPat string `json:"source_tag_pattern,omitempty"`
 }
 
 var packageCols = []output.Column{
@@ -131,7 +143,7 @@ func newGetCmd() *cobra.Command {
 }
 
 func newCreateCmd() *cobra.Command {
-	var name, sourceType, sourceURL, sourceBranch, sourcePath, sourceChart string
+	var name, description, sourceType, sourceURL, sourceBranch, sourcePath, sourceChart, sourceTagPat string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new package",
@@ -140,14 +152,16 @@ func newCreateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := createPackageRequest{
+			body := jsonapi.Wrap(packageResourceType, packageRequestAttrs{
 				Name:         name,
+				Description:  description,
 				SourceType:   sourceType,
 				SourceURL:    sourceURL,
 				SourceBranch: sourceBranch,
 				SourcePath:   sourcePath,
 				SourceChart:  sourceChart,
-			}
+				SourceTagPat: sourceTagPat,
+			})
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
@@ -160,11 +174,13 @@ func newCreateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Package name")
+	cmd.Flags().StringVar(&description, "description", "", "Package description")
 	cmd.Flags().StringVar(&sourceType, "source-type", "", "Source type (helm|git)")
 	cmd.Flags().StringVar(&sourceURL, "source-url", "", "Source URL")
 	cmd.Flags().StringVar(&sourceBranch, "source-branch", "", "Source branch")
 	cmd.Flags().StringVar(&sourcePath, "source-path", "", "Source path")
 	cmd.Flags().StringVar(&sourceChart, "source-chart", "", "Source chart name")
+	cmd.Flags().StringVar(&sourceTagPat, "source-tag-pattern", "", "Source tag pattern")
 	if err := cmd.MarkFlagRequired("name"); err != nil {
 		panic(err)
 	}
@@ -172,7 +188,7 @@ func newCreateCmd() *cobra.Command {
 }
 
 func newUpdateCmd() *cobra.Command {
-	var name, sourceType, sourceURL, sourceBranch, sourcePath, sourceChart string
+	var name, description, sourceType, sourceURL, sourceBranch, sourcePath, sourceChart, sourceTagPat string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a package",
@@ -182,45 +198,64 @@ func newUpdateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			body := map[string]any{}
+			attrs := packageRequestAttrs{}
+			anyChanged := false
 			if cmd.Flags().Changed("name") {
-				body["name"] = name
+				attrs.Name = name
+				anyChanged = true
+			}
+			if cmd.Flags().Changed("description") {
+				attrs.Description = description
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("source-type") {
-				body["source_type"] = sourceType
+				attrs.SourceType = sourceType
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("source-url") {
-				body["source_url"] = sourceURL
+				attrs.SourceURL = sourceURL
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("source-branch") {
-				body["source_branch"] = sourceBranch
+				attrs.SourceBranch = sourceBranch
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("source-path") {
-				body["source_path"] = sourcePath
+				attrs.SourcePath = sourcePath
+				anyChanged = true
 			}
 			if cmd.Flags().Changed("source-chart") {
-				body["source_chart"] = sourceChart
+				attrs.SourceChart = sourceChart
+				anyChanged = true
 			}
-			if len(body) == 0 {
+			if cmd.Flags().Changed("source-tag-pattern") {
+				attrs.SourceTagPat = sourceTagPat
+				anyChanged = true
+			}
+			if !anyChanged {
 				return clierror.New(clierror.CodeUsage, "at least one flag required for update", "")
 			}
+			body := jsonapi.Wrap(packageResourceType, attrs)
 			if gf.DryRun {
 				return output.JSONTo(cmd.OutOrStdout(), body)
 			}
 			path := "/api/v1/packages/" + url.PathEscape(args[0])
-			env, err := patchEnvelope[Package](cmd.Context(), client, path, body)
+			res, err := jsonapi.PatchSingle[packageAttrs](cmd.Context(), client, path, body)
 			if err != nil {
 				return err
 			}
-			return renderer.Render(packageCols, [][]string{packageRow(env.Data)}, env)
+			p := packageFromResource(res)
+			return renderer.Render(packageCols, [][]string{packageRow(p)}, httpclient.Envelope[Package]{Data: p})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Package name")
+	cmd.Flags().StringVar(&description, "description", "", "Package description")
 	cmd.Flags().StringVar(&sourceType, "source-type", "", "Source type")
 	cmd.Flags().StringVar(&sourceURL, "source-url", "", "Source URL")
 	cmd.Flags().StringVar(&sourceBranch, "source-branch", "", "Source branch")
 	cmd.Flags().StringVar(&sourcePath, "source-path", "", "Source path")
 	cmd.Flags().StringVar(&sourceChart, "source-chart", "", "Source chart name")
+	cmd.Flags().StringVar(&sourceTagPat, "source-tag-pattern", "", "Source tag pattern")
 	return cmd
 }
 
@@ -239,12 +274,4 @@ func newDeleteCmd() *cobra.Command {
 			return client.Delete(cmd.Context(), "/api/v1/packages/"+url.PathEscape(args[0]))
 		},
 	}
-}
-
-func patchEnvelope[T any](ctx context.Context, client *httpclient.Client, path string, body any) (httpclient.Envelope[T], error) {
-	var env httpclient.Envelope[T]
-	if err := client.Patch(ctx, path, body, &env); err != nil {
-		return httpclient.Envelope[T]{}, err
-	}
-	return env, nil
 }

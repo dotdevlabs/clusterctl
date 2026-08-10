@@ -14,6 +14,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/clusterctl/cmd/secrets"
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
 type mockTransport struct {
@@ -39,7 +40,7 @@ func (m *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func buildCtx(t *testing.T, transport http.RoundTripper, jsonMode bool) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	client := httpclient.NewWithTransport("https://example.com", "tok", transport)
+	client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: transport})
 	renderer := output.New(jsonMode, "", &out, &errOut)
 	ctx := context.Background()
 	ctx = ctxutil.WithClient(ctx, client)
@@ -57,7 +58,7 @@ func TestNewCommand(t *testing.T) {
 
 func TestList(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":[{"type":"secrets","id":"s1","attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL","project_id":"p1"}}],"links":{}}`},
+		{200, `{"data":[{"type":"project_secrets","id":"s1","attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL"}}],"links":{}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := secrets.NewCommand()
@@ -85,7 +86,7 @@ func TestList(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{201, `{"data":{"type":"secrets","id":"s2","attributes":{"kubernetes_secret_name":"app-secrets","key":"SECRET_KEY_BASE","project_id":"p1"}}}`},
+		{201, `{"data":{"type":"project_secrets","id":"s2","attributes":{"kubernetes_secret_name":"app-secrets","key":"SECRET_KEY_BASE"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
 	parent := secrets.NewCommand()
@@ -113,7 +114,7 @@ func TestCreate(t *testing.T) {
 
 func TestCreate_RequestBodyShape(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{201, `{"data":{"type":"secrets","id":"s3","attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL","project_id":"p1"}}}`},
+		{201, `{"data":{"type":"project_secrets","id":"s3","attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL"}}}`},
 	}}
 	ctx, _ := buildCtx(t, mt, true)
 	parent := secrets.NewCommand()
@@ -146,25 +147,91 @@ func TestCreate_RequestBodyShape(t *testing.T) {
 	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("unmarshal body: %v", err)
 	}
-	if body["kubernetes_secret_name"] != "app-secrets" {
-		t.Errorf("expected kubernetes_secret_name=app-secrets, got %v", body["kubernetes_secret_name"])
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be an object, got: %T", body["data"])
 	}
-	if body["key"] != "DATABASE_URL" {
-		t.Errorf("expected key=DATABASE_URL, got %v", body["key"])
+	if data["type"] != "project_secrets" {
+		t.Errorf("expected data.type=project_secrets, got %v", data["type"])
 	}
-	if body["value"] != "supersecret" {
-		t.Errorf("expected value=supersecret, got %v", body["value"])
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be an object, got: %T", data["attributes"])
 	}
-	if _, ok := body["name"]; ok {
-		t.Errorf("expected name to be absent from request body, but it was present: %v", body["name"])
+	if attrs["kubernetes_secret_name"] != "app-secrets" {
+		t.Errorf("expected kubernetes_secret_name=app-secrets, got %v", attrs["kubernetes_secret_name"])
+	}
+	if attrs["key"] != "DATABASE_URL" {
+		t.Errorf("expected key=DATABASE_URL, got %v", attrs["key"])
+	}
+	if attrs["value"] != "supersecret" {
+		t.Errorf("expected value=supersecret, got %v", attrs["value"])
+	}
+}
+
+// TestCreate_JSONAPIContentType verifies that create sends the correct Content-Type.
+func TestCreate_JSONAPIContentType(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"project_secrets","id":"s4","attributes":{"kubernetes_secret_name":"app-secrets","key":"K"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := secrets.NewCommand()
+	if err := parent.PersistentFlags().Set("project-id", "p1"); err != nil {
+		t.Fatal(err)
+	}
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--secret-name", "app-secrets", "--key", "K", "--value", "v"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if got := mt.calls[0].Header.Get("Content-Type"); got != "application/vnd.api+json" {
+		t.Errorf("Content-Type = %q, want application/vnd.api+json", got)
+	}
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want application/vnd.api+json", got)
+	}
+}
+
+// TestDelete_JSONAPIAcceptHeader verifies that delete sends the correct Accept header.
+func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{204, ``},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := secrets.NewCommand()
+	if err := parent.PersistentFlags().Set("project-id", "p1"); err != nil {
+		t.Fatal(err)
+	}
+	sub, _, err := parent.Find([]string{"delete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"s1"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
+		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
 
 func TestList_ShowsKubernetesSecretNameAndKey(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
 		{200, `{"data":[` +
-			`{"type":"secrets","id":"s1","attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL","project_id":"p1"}},` +
-			`{"type":"secrets","id":"s2","attributes":{"kubernetes_secret_name":"app-secrets","key":"CACHE_DATABASE_URL","project_id":"p1"}}` +
+			`{"type":"project_secrets","id":"s1","attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL"}},` +
+			`{"type":"project_secrets","id":"s2","attributes":{"kubernetes_secret_name":"app-secrets","key":"CACHE_DATABASE_URL"}}` +
 			`],"links":{}}`},
 	}}
 	ctx, out := buildCtx(t, mt, true)
@@ -195,7 +262,7 @@ func TestList_ShowsKubernetesSecretNameAndKey(t *testing.T) {
 func TestCreateDryRun(t *testing.T) {
 	mt := &mockTransport{}
 	var out, errOut bytes.Buffer
-	client := httpclient.NewWithTransport("https://example.com", "tok", mt)
+	client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: mt})
 	renderer := output.New(true, "", &out, &errOut)
 	ctx := context.Background()
 	ctx = ctxutil.WithClient(ctx, client)
@@ -229,11 +296,8 @@ func TestCreateDryRun(t *testing.T) {
 	if !strings.Contains(got, "kubernetes_secret_name") {
 		t.Errorf("expected kubernetes_secret_name in dry-run output, got: %s", got)
 	}
-	if !strings.Contains(got, "key") {
-		t.Errorf("expected key in dry-run output, got: %s", got)
-	}
-	if strings.Contains(got, `"name"`) {
-		t.Errorf("expected name to be absent from dry-run output, got: %s", got)
+	if !strings.Contains(got, "project_secrets") {
+		t.Errorf("expected project_secrets resource type in dry-run output, got: %s", got)
 	}
 }
 
@@ -264,7 +328,7 @@ func TestDelete(t *testing.T) {
 
 func TestMaterialize(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"status":"materialized"}`},
+		{200, `{"data":{"type":"secret_materializations","id":null,"attributes":{"applied_count":3,"message":"materialized"}}}`},
 	}}
 	ctx, out := buildCtx(t, mt, false)
 	parent := secrets.NewCommand()

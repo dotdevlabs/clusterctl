@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dotdevlabs/ctlkit/pkg/airef"
 	"github.com/dotdevlabs/ctlkit/pkg/clierror"
+	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
+	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/root"
 	"github.com/dotdevlabs/ctlkit/pkg/version"
 
@@ -15,6 +18,7 @@ import (
 	"github.com/dotdevlabs/clusterctl/cmd/packages"
 	"github.com/dotdevlabs/clusterctl/cmd/projects"
 	"github.com/dotdevlabs/clusterctl/cmd/secrets"
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
 // Execute builds and runs the clusterctl root command.
@@ -32,6 +36,28 @@ func Execute() {
 		},
 		Workflows: aiWorkflows(),
 	})
+
+	// Chain our JSON:API transport middleware after ctlkit's PersistentPreRunE.
+	// ctlkit creates the client with http.DefaultTransport; we replace it with
+	// one that enforces application/vnd.api+json on all requests.
+	origPre := r.PersistentPreRunE
+	r.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := origPre(cmd, args); err != nil {
+			return err
+		}
+		activeCtx := ctxutil.ActiveContextFrom(cmd.Context())
+		if activeCtx == nil {
+			return nil
+		}
+		client := httpclient.NewWithTransport(
+			activeCtx.BaseURL,
+			activeCtx.Token,
+			&jsonapi.Transport{Wrapped: http.DefaultTransport},
+		)
+		cmd.SetContext(ctxutil.WithClient(cmd.Context(), client))
+		return nil
+	}
+
 	if err := r.Execute(); err != nil {
 		os.Exit(clierror.HandleErr(err, os.Stderr))
 	}
@@ -44,7 +70,7 @@ func aiWorkflows() []airef.Workflow {
 			Description: "Authenticate, create a virtual cluster nested under a parent, and verify its status.",
 			Steps: []string{
 				"clusterctl auth login",
-				"clusterctl clusters create --name my-vcluster --cluster-type virtual --parent-cluster-id <parent-id>",
+				"clusterctl clusters create --cluster-type virtual --name my-vcluster --parent-cluster-id <parent-id>",
 				"clusterctl clusters get <cluster-id>",
 				"clusterctl clusters health-check <cluster-id>",
 			},
