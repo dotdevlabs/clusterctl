@@ -68,6 +68,8 @@ The active context can be overridden per-command with `--context <name>` or `CLU
 
 ## Commands
 
+> **Pagination**: All `list` subcommands automatically follow the server's `links.next` pagination links and return the complete result set across all pages. There is no need to pass page parameters manually.
+
 ### clusters
 
 ```bash
