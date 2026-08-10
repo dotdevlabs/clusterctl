@@ -312,3 +312,72 @@ func TestGet404(t *testing.T) {
 		t.Fatal("expected error for 404")
 	}
 }
+
+// TestUpdate_JSONAPIBodyEnvelope verifies the update request body is a JSON:API envelope.
+func TestUpdate_JSONAPIBodyEnvelope(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"renamed","source_type":"helm"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be an object, got: %T", body["data"])
+	}
+	if data["type"] != "packages" {
+		t.Errorf("expected data.type=packages, got %v", data["type"])
+	}
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be an object, got: %T", data["attributes"])
+	}
+	if attrs["name"] != "renamed" {
+		t.Errorf("expected attributes.name=renamed, got %v", attrs["name"])
+	}
+}
+
+// TestCreate_JSONAPIErrorSurfacing verifies JSON:API errors[] are surfaced on 4xx.
+func TestCreate_JSONAPIErrorSurfacing(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"status":"422","detail":"name is already taken"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "existing", "--source-type", "helm", "--source-url", "https://charts.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error for 422 response")
+	}
+	if !strings.Contains(err.Error(), "name is already taken") {
+		t.Errorf("expected error to contain 'name is already taken', got: %v", err)
+	}
+}

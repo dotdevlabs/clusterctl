@@ -438,6 +438,30 @@ func buildCtxFromURL(t *testing.T, baseURL string, jsonMode bool) (context.Conte
 	return ctx, &out
 }
 
+// TestCreate_JSONAPIErrorSurfacing verifies JSON:API errors[] are surfaced on 4xx.
+func TestCreate_JSONAPIErrorSurfacing(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{400, `{"errors":[{"status":"400","detail":"cluster_type is invalid"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "bad", "--cluster-type", "bad"}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error for 400 response")
+	}
+	if !strings.Contains(err.Error(), "cluster_type is invalid") {
+		t.Errorf("expected error to contain 'cluster_type is invalid', got: %v", err)
+	}
+}
+
 func TestGetPopulatesNonIDAttributes(t *testing.T) {
 	var gotAccept string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

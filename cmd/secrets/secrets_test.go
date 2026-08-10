@@ -352,6 +352,33 @@ func TestMaterialize(t *testing.T) {
 	}
 }
 
+// TestCreate_JSONAPIErrorSurfacing verifies JSON:API errors[] are surfaced on 4xx.
+func TestCreate_JSONAPIErrorSurfacing(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"status":"422","detail":"key has already been taken"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := secrets.NewCommand()
+	if err := parent.PersistentFlags().Set("project-id", "p1"); err != nil {
+		t.Fatal(err)
+	}
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--secret-name", "app-secrets", "--key", "DATABASE_URL", "--value", "v"}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error for 422 response")
+	}
+	if !strings.Contains(err.Error(), "key has already been taken") {
+		t.Errorf("expected error to contain 'key has already been taken', got: %v", err)
+	}
+}
+
 func TestListMissingProjectID(t *testing.T) {
 	mt := &mockTransport{}
 	ctx, _ := buildCtx(t, mt, false)

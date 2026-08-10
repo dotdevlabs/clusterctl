@@ -325,6 +325,37 @@ func TestUpdate_JSONAPIContentType(t *testing.T) {
 	}
 }
 
+// TestCreate_JSONAPIErrorSurfacing verifies JSON:API errors[] are surfaced on 4xx.
+func TestCreate_JSONAPIErrorSurfacing(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"status":"422","detail":"project_id can't be blank"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--cluster-id", "c1",
+		"--name", "x",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error for 422 response")
+	}
+	if !strings.Contains(err.Error(), "project_id can't be blank") {
+		t.Errorf("expected error to contain 'project_id can\\'t be blank', got: %v", err)
+	}
+}
+
 func TestCreate422WithError(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
 		{422, `{"error":"validation failed: name can't be blank"}`},

@@ -12,7 +12,7 @@ type Transport struct {
 func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r2 := r.Clone(r.Context())
 	r2.Header.Set("Accept", "application/vnd.api+json")
-	if r2.Method == http.MethodPatch {
+	if r2.Method == http.MethodPatch || r2.Method == http.MethodPost {
 		r2.Header.Set("Content-Type", "application/vnd.api+json")
 	}
 	wrapped := t.Wrapped
