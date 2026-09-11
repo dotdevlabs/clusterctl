@@ -547,6 +547,11 @@ components:
         canary_latency_p99_ms: { type: integer, nullable: true }
         node_selector: { type: object, additionalProperties: { type: string }, nullable: true }
         tolerations: { type: array, items: { type: object }, nullable: true }
+        template_extra_resources:
+          type: object
+          additionalProperties: { type: string }
+          nullable: true
+          description: "Extra template files injected into the deployment, as a filename→YAML-content map"
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         # show-only flux fields
@@ -640,6 +645,10 @@ components:
                       operator: { type: string }
                       value: { type: string }
                       effect: { type: string }
+                template_extra_resources:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: "Extra template files as a filename→YAML-content map"
 
     # ── Templates ─────────────────────────────────────────────────────────────
     TemplateInput:
