@@ -119,14 +119,47 @@ clusterctl packages delete <id>
 clusterctl deployments list
 clusterctl deployments get <id>
 clusterctl deployments create --project-id <id> --name <name> --namespace <namespace> \
-  --package-name <name> --package-version <ver> [--cluster-id <id>] [--values-override <yaml>]
+  --package-name <name> --package-version <ver> [--cluster-id <id>] \
+  [--values-override <yaml>] [--environment-preset <name>] [--is-ai] \
+  [--scaling-mode <hpa|keda|manual>] [--scaling-profile <name>] \
+  [--min-replicas <n>] [--max-replicas <n>] [--desired-replicas <n>] \
+  [--cpu-target-utilization <pct>] [--memory-target-utilization <pct>] \
+  [--cpu-request <qty>] [--cpu-limit <qty>] \
+  [--memory-request <qty>] [--memory-limit <qty>] \
+  [--placement-policy <name>] \
+  [--canary-enabled] [--canary-step-weight <pct>] [--canary-interval <dur>] \
+  [--canary-max-weight <pct>] [--canary-success-threshold <0-1>] \
+  [--canary-error-threshold <0-1>] [--canary-latency-p99-ms <ms>] \
+  [--node-selector <json>] [--tolerations <json>] \
+  [--template-extra-resources <json>]
 clusterctl deployments update <id> [--project-id <id>] [--cluster-id <id>] [--name <name>] \
   [--namespace <namespace>] [--package-name <name>] [--package-version <ver>] \
-  [--values-override <yaml>]
+  [--values-override <yaml>] [--environment-preset <name>] [--is-ai] \
+  [--scaling-mode <hpa|keda|manual>] [--scaling-profile <name>] \
+  [--min-replicas <n>] [--max-replicas <n>] [--desired-replicas <n>] \
+  [--cpu-target-utilization <pct>] [--memory-target-utilization <pct>] \
+  [--cpu-request <qty>] [--cpu-limit <qty>] \
+  [--memory-request <qty>] [--memory-limit <qty>] \
+  [--placement-policy <name>] \
+  [--canary-enabled] [--canary-step-weight <pct>] [--canary-interval <dur>] \
+  [--canary-max-weight <pct>] [--canary-success-threshold <0-1>] \
+  [--canary-error-threshold <0-1>] [--canary-latency-p99-ms <ms>] \
+  [--node-selector <json>] [--tolerations <json>] \
+  [--template-extra-resources <json>]
 clusterctl deployments delete <id>
 ```
 
 > **Note:** `--package-version` is required for `deployments create`. `--cluster-id` is optional (the deployment can be created without a cluster assignment).
+
+**Complex JSON flags** accept inline JSON strings:
+
+| Flag | Type | Example |
+|------|------|---------|
+| `--node-selector` | JSON object | `'{"kubernetes.io/os":"linux"}'` |
+| `--tolerations` | JSON array | `'[{"key":"dedicated","operator":"Equal","value":"gpu","effect":"NoSchedule"}]'` |
+| `--template-extra-resources` | JSON object (filename → YAML string) | `'{"extra.yaml":"apiVersion: v1\nkind: ConfigMap\n..."}'` |
+
+The CLI validates the JSON shape locally before sending the request.
 
 ### secrets
 
@@ -189,6 +222,24 @@ clusterctl deployments create \
   --namespace default \
   --package-name promtail \
   --package-version 1.2.0
+
+# Deploy with HPA scaling, resource limits, and extra template resources
+clusterctl deployments create \
+  --project-id abc123 \
+  --cluster-id def456 \
+  --name my-app \
+  --namespace production \
+  --package-name my-app \
+  --package-version 2.0.0 \
+  --scaling-mode hpa \
+  --min-replicas 2 \
+  --max-replicas 10 \
+  --cpu-request 250m \
+  --cpu-limit 500m \
+  --memory-request 256Mi \
+  --memory-limit 512Mi \
+  --node-selector '{"kubernetes.io/os":"linux"}' \
+  --template-extra-resources '{"extra-config.yaml":"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: extra\n"}'
 
 # Materialize secrets in a project
 clusterctl secrets materialize --project-id abc123
