@@ -37,6 +37,20 @@ func (m *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: resp.status, Body: io.NopCloser(strings.NewReader(resp.body)), Header: make(http.Header)}, nil
 }
 
+// mustAttrs extracts data.attributes from a JSON body map, fataling on bad shape.
+func mustAttrs(t *testing.T, body map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	data, ok := body["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected body.data to be an object, got %T", body["data"])
+	}
+	attrs, ok := data["attributes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be an object, got %T", data["attributes"])
+	}
+	return attrs
+}
+
 func buildCtx(t *testing.T, transport http.RoundTripper, jsonMode bool) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	var out, errOut bytes.Buffer
@@ -489,6 +503,656 @@ func TestUpdateUsesSelfLink(t *testing.T) {
 	}
 	if mt.calls[1].URL.Path != "/api/v1/deployments/d1-canonical" {
 		t.Errorf("expected PATCH to use self link /api/v1/deployments/d1-canonical, got: %s", mt.calls[1].URL.Path)
+	}
+}
+
+// TestCreate_AllScalarFields verifies dry-run create with all scalar flags produces a body with those fields.
+func TestCreate_AllScalarFields(t *testing.T) {
+	ctx, out := buildCtx(t, &mockTransport{}, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "2.0.0",
+		"--cluster-id", "c1",
+		"--environment-preset", "prod",
+		"--values-override", "key: val",
+		"--scaling-mode", "hpa",
+		"--cpu-request", "100m",
+		"--cpu-limit", "500m",
+		"--memory-request", "128Mi",
+		"--memory-limit", "512Mi",
+		"--scaling-profile", "balanced",
+		"--placement-policy", "spread",
+		"--canary-interval", "1m",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	for _, field := range []string{"project_id", "name", "namespace", "package_name", "package_version", "cluster_id", "environment_preset", "values_override", "scaling_mode", "cpu_request", "cpu_limit", "memory_request", "memory_limit", "scaling_profile", "placement_policy", "canary_interval"} {
+		if _, ok := attrs[field]; !ok {
+			t.Errorf("missing field %q in dry-run body", field)
+		}
+	}
+}
+
+// TestCreate_TemplateExtraResources verifies dry-run create includes template_extra_resources.
+func TestCreate_TemplateExtraResources(t *testing.T) {
+	ctx, out := buildCtx(t, &mockTransport{}, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--template-extra-resources", `{"config.yaml":"content here"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	ter, ok := attrs["template_extra_resources"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected template_extra_resources to be object, got %T: %v", attrs["template_extra_resources"], attrs["template_extra_resources"])
+	}
+	if ter["config.yaml"] != "content here" {
+		t.Errorf("expected config.yaml=content here, got %v", ter["config.yaml"])
+	}
+}
+
+// TestCreate_TemplateValues verifies dry-run create includes template_values.
+func TestCreate_TemplateValues(t *testing.T) {
+	ctx, out := buildCtx(t, &mockTransport{}, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--template-values", `{"replicas":"3"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	tv, ok := attrs["template_values"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected template_values to be object, got %T: %v", attrs["template_values"], attrs["template_values"])
+	}
+	if tv["replicas"] != "3" {
+		t.Errorf("expected replicas=3, got %v", tv["replicas"])
+	}
+}
+
+// TestCreate_NodeSelector verifies dry-run create includes node_selector.
+func TestCreate_NodeSelector(t *testing.T) {
+	ctx, out := buildCtx(t, &mockTransport{}, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--node-selector", `{"tier":"frontend"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	ns, ok := attrs["node_selector"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected node_selector to be object, got %T", attrs["node_selector"])
+	}
+	if ns["tier"] != "frontend" {
+		t.Errorf("expected tier=frontend, got %v", ns["tier"])
+	}
+}
+
+// TestCreate_Tolerations verifies dry-run create includes tolerations array.
+func TestCreate_Tolerations(t *testing.T) {
+	ctx, out := buildCtx(t, &mockTransport{}, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--tolerations", `[{"key":"spot","operator":"Exists","effect":"NoSchedule"}]`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	tols, ok := attrs["tolerations"].([]interface{})
+	if !ok || len(tols) == 0 {
+		t.Fatalf("expected tolerations to be non-empty array, got %T: %v", attrs["tolerations"], attrs["tolerations"])
+	}
+	tol, ok2 := tols[0].(map[string]interface{})
+	if !ok2 {
+		t.Fatalf("expected toleration element to be object, got %T", tols[0])
+	}
+	if tol["key"] != "spot" || tol["effect"] != "NoSchedule" {
+		t.Errorf("unexpected toleration values: %v", tol)
+	}
+}
+
+// TestCreate_MalformedNodeSelector verifies that invalid node-selector JSON returns an error.
+func TestCreate_MalformedNodeSelector(t *testing.T) {
+	ctx, _ := buildCtx(t, &mockTransport{}, false)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--node-selector", "not-json",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error for malformed node-selector")
+	}
+	if !strings.Contains(err.Error(), "node-selector") {
+		t.Errorf("expected error to mention node-selector, got: %v", err)
+	}
+}
+
+// TestCreate_MalformedTolerations verifies that non-array JSON for tolerations returns an error.
+func TestCreate_MalformedTolerations(t *testing.T) {
+	ctx, _ := buildCtx(t, &mockTransport{}, false)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--tolerations", `{"key":"v"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error for non-array tolerations")
+	}
+	if !strings.Contains(err.Error(), "tolerations") {
+		t.Errorf("expected error to mention tolerations, got: %v", err)
+	}
+}
+
+// TestCreate_MalformedTemplateExtraResources verifies non-string values are rejected.
+func TestCreate_MalformedTemplateExtraResources(t *testing.T) {
+	ctx, _ := buildCtx(t, &mockTransport{}, false)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--template-extra-resources", `{"file.yaml": 123}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error for non-string template-extra-resources value")
+	}
+	if !strings.Contains(err.Error(), "template-extra-resources") {
+		t.Errorf("expected error to mention template-extra-resources, got: %v", err)
+	}
+}
+
+// TestCreate_MalformedTemplateValues verifies that a non-object JSON value is rejected.
+func TestCreate_MalformedTemplateValues(t *testing.T) {
+	ctx, _ := buildCtx(t, &mockTransport{}, false)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--template-values", `[1,2,3]`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error for non-object template-values")
+	}
+	if !strings.Contains(err.Error(), "template-values") {
+		t.Errorf("expected error to mention template-values, got: %v", err)
+	}
+}
+
+// TestCreate_IntegerFlags verifies integer flags appear in dry-run body.
+func TestCreate_IntegerFlags(t *testing.T) {
+	ctx, out := buildCtx(t, &mockTransport{}, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--min-replicas", "3",
+		"--max-replicas", "10",
+		"--desired-replicas", "5",
+		"--cpu-target-utilization", "80",
+		"--memory-target-utilization", "75",
+		"--canary-step-weight", "10",
+		"--canary-max-weight", "50",
+		"--canary-latency-p99-ms", "500",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	if attrs["min_replicas"] != float64(3) {
+		t.Errorf("expected min_replicas=3, got %v", attrs["min_replicas"])
+	}
+	if attrs["max_replicas"] != float64(10) {
+		t.Errorf("expected max_replicas=10, got %v", attrs["max_replicas"])
+	}
+	if attrs["canary_latency_p99_ms"] != float64(500) {
+		t.Errorf("expected canary_latency_p99_ms=500, got %v", attrs["canary_latency_p99_ms"])
+	}
+}
+
+// TestCreate_BooleanFlagTrue verifies bool flags appear in body when set.
+func TestCreate_BooleanFlagTrue(t *testing.T) {
+	ctx, out := buildCtx(t, &mockTransport{}, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+		"--is-ai",
+		"--canary-enabled",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	if attrs["is_ai"] != true {
+		t.Errorf("expected is_ai=true, got %v", attrs["is_ai"])
+	}
+	if attrs["canary_enabled"] != true {
+		t.Errorf("expected canary_enabled=true, got %v", attrs["canary_enabled"])
+	}
+}
+
+// TestCreate_BooleanFlagNotSet verifies bool flags are omitted when not provided.
+func TestCreate_BooleanFlagNotSet(t *testing.T) {
+	ctx, out := buildCtx(t, &mockTransport{}, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	if _, ok := attrs["is_ai"]; ok {
+		t.Errorf("expected is_ai to be absent when not set, but it was present: %v", attrs["is_ai"])
+	}
+	if _, ok := attrs["canary_enabled"]; ok {
+		t.Errorf("expected canary_enabled to be absent when not set, but it was present: %v", attrs["canary_enabled"])
+	}
+}
+
+// TestCreate_DryRunNoHTTP verifies dry-run emits JSON and makes no HTTP calls.
+func TestCreate_DryRunNoHTTP(t *testing.T) {
+	mt := &mockTransport{}
+	ctx, out := buildCtx(t, mt, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "svc",
+		"--namespace", "ns",
+		"--package-name", "pkg",
+		"--package-version", "1.0.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls in dry-run, got %d", len(mt.calls))
+	}
+	if !strings.Contains(out.String(), "deployments") {
+		t.Errorf("expected JSON output, got: %s", out.String())
+	}
+}
+
+// TestUpdate_AllScalarFields verifies update sends only changed scalar fields.
+func TestUpdate_AllScalarFields(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"svc","project_id":"p1","status":"deployed"}}}`},
+		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"svc","project_id":"p1","cpu_request":"200m","status":"deployed"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--cpu-request", "200m",
+		"--memory-limit", "1Gi",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[1].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	if attrs["cpu_request"] != "200m" {
+		t.Errorf("expected cpu_request=200m, got %v", attrs["cpu_request"])
+	}
+	if attrs["memory_limit"] != "1Gi" {
+		t.Errorf("expected memory_limit=1Gi, got %v", attrs["memory_limit"])
+	}
+	if _, ok := attrs["name"]; ok {
+		t.Errorf("expected name to be absent (not changed), but present: %v", attrs["name"])
+	}
+}
+
+// TestUpdate_TemplateExtraResources verifies update with template-extra-resources.
+func TestUpdate_TemplateExtraResources(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"svc","project_id":"p1","status":"deployed"}}}`},
+		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"svc","project_id":"p1","status":"deployed"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--template-extra-resources", `{"f.yaml":"c"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[1].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	ter, ok := attrs["template_extra_resources"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected template_extra_resources object, got %T", attrs["template_extra_resources"])
+	}
+	if ter["f.yaml"] != "c" {
+		t.Errorf("expected f.yaml=c, got %v", ter["f.yaml"])
+	}
+}
+
+// TestUpdate_StructuredFieldsChangedOnly verifies only explicitly-changed flags go into PATCH body.
+func TestUpdate_StructuredFieldsChangedOnly(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"svc","project_id":"p1","status":"deployed"}}}`},
+		{200, `{"data":{"type":"deployments","id":"d1","attributes":{"name":"svc","project_id":"p1","status":"deployed"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--template-values", `{"key":"val"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[1].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	if _, ok := attrs["template_values"]; !ok {
+		t.Error("expected template_values in PATCH body")
+	}
+	// node_selector was not changed, must be absent
+	if _, ok := attrs["node_selector"]; ok {
+		t.Errorf("expected node_selector absent (not changed), but present: %v", attrs["node_selector"])
+	}
+}
+
+// TestUpdate_MalformedStructuredInput verifies update returns error and no HTTP call on bad JSON.
+func TestUpdate_MalformedStructuredInput(t *testing.T) {
+	mt := &mockTransport{}
+	ctx, _ := buildCtx(t, mt, false)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--template-extra-resources", `not-valid`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = sub.RunE(sub, []string{"d1"})
+	if err == nil {
+		t.Fatal("expected error for malformed template-extra-resources")
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls on validation error, got %d", len(mt.calls))
+	}
+}
+
+// TestUpdate_DryRunNoHTTP verifies update dry-run emits JSON and makes no HTTP calls.
+func TestUpdate_DryRunNoHTTP(t *testing.T) {
+	mt := &mockTransport{}
+	ctx, out := buildCtx(t, mt, true)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.ParseFlags([]string{"--package-version", "3.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("update dry-run: %v", err)
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls in dry-run, got %d", len(mt.calls))
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	attrs := mustAttrs(t, body)
+	if attrs["package_version"] != "3.0.0" {
+		t.Errorf("expected package_version=3.0.0, got %v", attrs["package_version"])
+	}
+	if _, ok := attrs["name"]; ok {
+		t.Errorf("expected name absent (not changed) in dry-run, got: %v", attrs["name"])
 	}
 }
 
