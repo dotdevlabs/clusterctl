@@ -129,7 +129,7 @@ func aiWorkflows() []airef.Workflow {
 				"clusterctl package-update-policies list",
 				"clusterctl package-update-policies create --deployment-id <deployment-id> --max-attempts 3",
 				"clusterctl package-update-policies get <policy-id>",
-				"clusterctl package-update-policies update <policy-id> --is-blocked true",
+				"clusterctl package-update-policies update <policy-id> --is-blocked",
 			},
 		},
 		{
