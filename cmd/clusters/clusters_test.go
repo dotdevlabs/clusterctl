@@ -590,6 +590,132 @@ func TestHealthCheckUsesSelfLink(t *testing.T) {
 	}
 }
 
+func TestProvisioning(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"provisionings","id":"c1","attributes":{"name":"prod","status":"provisioning","provisioning_message":"creating vcluster","provisioning_started_at":"2024-01-01T00:00:00Z"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("provisioning: %v", err)
+	}
+	if !strings.Contains(out.String(), "provisioning") {
+		t.Errorf("expected status in output, got: %s", out.String())
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/clusters/c1/provisioning") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+	if mt.calls[0].Method != http.MethodGet {
+		t.Errorf("expected GET, got %s", mt.calls[0].Method)
+	}
+}
+
+func TestProvisioning_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestFluxBootstrapStatus(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"flux_bootstraps","id":"c1","attributes":{"name":"prod","flux_bootstrap_status":"bootstrapped","flux_bootstrap_error":""}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"flux-bootstrap-status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("flux-bootstrap-status: %v", err)
+	}
+	if !strings.Contains(out.String(), "bootstrapped") {
+		t.Errorf("expected bootstrapped in output, got: %s", out.String())
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/clusters/c1/flux_bootstrap") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+	if mt.calls[0].Method != http.MethodGet {
+		t.Errorf("expected GET, got %s", mt.calls[0].Method)
+	}
+}
+
+func TestFluxBootstrapStatus_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"flux-bootstrap-status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestExpose(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"exposures","id":"c1","attributes":{"name":"prod","status":"exposed"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"expose"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("expose: %v", err)
+	}
+	if !strings.Contains(out.String(), "exposed") {
+		t.Errorf("expected status in output, got: %s", out.String())
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/clusters/c1/exposure") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+	if mt.calls[0].Method != http.MethodPost {
+		t.Errorf("expected POST, got %s", mt.calls[0].Method)
+	}
+}
+
+func TestExpose_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"title":"already exposed"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"expose"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"c1"}); err == nil {
+		t.Fatal("expected error for 422")
+	}
+}
+
 // TestFluxBootstrapUsesSelfLink verifies flux-bootstrap appends to data.links.self.
 func TestFluxBootstrapUsesSelfLink(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{

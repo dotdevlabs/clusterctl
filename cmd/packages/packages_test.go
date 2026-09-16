@@ -380,6 +380,82 @@ func TestUpdateUsesSelfLink(t *testing.T) {
 	}
 }
 
+func TestReleasesList(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":[{"type":"package_releases","id":"r1","attributes":{"version":"1.0.0","released_at":"2024-01-01T00:00:00Z"}}],"links":{}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"releases", "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
+		t.Fatalf("releases list: %v", err)
+	}
+	if !strings.Contains(out.String(), "r1") {
+		t.Errorf("expected r1 in output, got: %s", out.String())
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/packages/pkg1/package_releases") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestReleasesList_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"releases", "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestReleasesGet(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"package_releases","id":"r1","attributes":{"version":"1.0.0","released_at":"2024-01-01T00:00:00Z"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"releases", "get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"pkg1", "r1"}); err != nil {
+		t.Fatalf("releases get: %v", err)
+	}
+	if !strings.Contains(out.String(), "r1") {
+		t.Errorf("expected r1 in output, got: %s", out.String())
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/packages/pkg1/package_releases/r1") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestReleasesGet_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"releases", "get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing", "r1"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
 // TestDeleteUsesSelfLink verifies that delete uses data.links.self for the DELETE URL.
 func TestDeleteUsesSelfLink(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{

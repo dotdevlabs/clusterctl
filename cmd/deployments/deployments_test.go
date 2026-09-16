@@ -986,6 +986,22 @@ func TestUpdateRunsGet(t *testing.T) {
 	}
 }
 
+func TestUpdateRunsGet_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update-runs", "get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1", "missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
 func TestPin(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
 		{201, `{"data":{"type":"pins","id":"pin1","attributes":{"deployment_id":"d1","package_version":"1.0.0"}}}`},
@@ -1050,6 +1066,22 @@ func TestUnpin(t *testing.T) {
 	}
 }
 
+func TestUnpin_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"unpin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
 func TestPackageUpdateGet(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
 		{200, `{"data":{"type":"package_updates","id":"pu1","attributes":{"deployment_id":"d1","from_version":"1.0.0","to_version":"1.1.0","status":"pending"}}}`},
@@ -1110,6 +1142,22 @@ func TestPackageUpdateApply(t *testing.T) {
 	}
 	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/package_update") {
 		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestPackageUpdateApply_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"title":"update already in progress"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"package-update", "apply"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err == nil {
+		t.Fatal("expected error for 422")
 	}
 }
 
