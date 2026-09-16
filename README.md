@@ -40,10 +40,10 @@ Pre-built binaries for Linux, macOS (Intel + Apple Silicon), and Windows are ava
 ## Authentication
 
 ```bash
-# Interactive browser login
-clusterctl auth login
+# Store a named context with a bearer token
+clusterctl auth login --name prod --url https://api.clustercontrol.co --token <token>
 
-# Or set token directly
+# Or set token directly via environment variable (uses default URL)
 export CLUSTERCTL_TOKEN=<your-token>
 ```
 
@@ -81,7 +81,8 @@ clusterctl status
 ### auth
 
 ```bash
-clusterctl auth whoami   # verify token and return identity (organization, owner, token)
+clusterctl auth login --name <ctx> --url <base-url> --token <token>  # store a named context
+clusterctl auth whoami                                                # verify token and return identity (organization, owner, token)
 ```
 
 ### registrations

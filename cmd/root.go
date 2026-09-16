@@ -33,7 +33,9 @@ func Execute() {
 		Short:   "ClusterControl lifecycle management CLI",
 		Version: version.Current("clusterctl"),
 		Commands: []*cobra.Command{
-			auth.NewCommand(),
+			// auth.NewCommand() is intentionally absent: ctlkit's root.New already
+			// adds its own "auth" command (providing "auth login"). We extend that
+			// command with "auth whoami" below rather than registering a duplicate.
 			clusters.NewCommand(),
 			deployments.NewCommand(),
 			packageupdatepolicies.NewCommand(),
@@ -46,6 +48,13 @@ func Execute() {
 		},
 		Workflows: aiWorkflows(),
 	})
+
+	// Extend ctlkit's built-in "auth" command with the ClusterControl-specific
+	// "whoami" subcommand (GET /auth). ctlkit registers its "auth" command before
+	// product-specific commands, so Find returns it here.
+	if authCmd, _, _ := r.Find([]string{"auth"}); authCmd != nil && authCmd != r {
+		authCmd.AddCommand(auth.NewWhoamiCmd())
+	}
 
 	// Chain our JSON:API transport middleware after ctlkit's PersistentPreRunE.
 	// ctlkit creates the client with http.DefaultTransport; we replace it with

@@ -28,13 +28,20 @@ type authContextAttrs struct {
 }
 
 // NewCommand returns the "auth" cobra.Command with all subcommands attached.
+// Used by the conformance test's isolated root builder.
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Authenticate with ClusterControl",
 	}
-	cmd.AddCommand(newWhoamiCmd())
+	cmd.AddCommand(NewWhoamiCmd())
 	return cmd
+}
+
+// NewWhoamiCmd returns the "whoami" subcommand so it can be attached to an
+// existing auth command (e.g. ctlkit's built-in auth command in the real binary).
+func NewWhoamiCmd() *cobra.Command {
+	return newWhoamiCmd()
 }
 
 func newWhoamiCmd() *cobra.Command {
