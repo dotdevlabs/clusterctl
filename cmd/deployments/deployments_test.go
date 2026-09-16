@@ -923,6 +923,286 @@ func TestGet_DecodesNewFields(t *testing.T) {
 	}
 }
 
+func TestUpdateRunsList(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":[{"type":"update_runs","id":"ur1","attributes":{"deployment_id":"d1","status":"succeeded","attempt":1,"package_version":"1.2.0"}}],"links":{}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update-runs", "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("update-runs list: %v", err)
+	}
+	if !strings.Contains(out.String(), "ur1") {
+		t.Errorf("expected ur1 in output, got: %s", out.String())
+	}
+	if mt.calls[0].Method != http.MethodGet {
+		t.Errorf("expected GET, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/update_runs") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestUpdateRunsList_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"message":"not found"}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update-runs", "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestUpdateRunsGet(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"update_runs","id":"ur1","attributes":{"deployment_id":"d1","status":"succeeded","attempt":2,"package_version":"1.3.0"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update-runs", "get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1", "ur1"}); err != nil {
+		t.Fatalf("update-runs get: %v", err)
+	}
+	if !strings.Contains(out.String(), "ur1") {
+		t.Errorf("expected ur1 in output, got: %s", out.String())
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/update_runs/ur1") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestUpdateRunsGet_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"update-runs", "get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1", "missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestPin(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"pins","id":"pin1","attributes":{"deployment_id":"d1","package_version":"1.0.0"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"pin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("pin: %v", err)
+	}
+	if !strings.Contains(out.String(), "d1") {
+		t.Errorf("expected deployment_id in output, got: %s", out.String())
+	}
+	if mt.calls[0].Method != http.MethodPost {
+		t.Errorf("expected POST, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/pin") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestPin_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"error":"already pinned"}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"pin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err == nil {
+		t.Fatal("expected error for 422")
+	}
+}
+
+func TestUnpin(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{204, ``},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"unpin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("unpin: %v", err)
+	}
+	if mt.calls[0].Method != http.MethodDelete {
+		t.Errorf("expected DELETE, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/pin") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestUnpin_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"unpin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestPackageUpdateGet(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"package_updates","id":"pu1","attributes":{"deployment_id":"d1","from_version":"1.0.0","to_version":"1.1.0","status":"pending"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"package-update", "get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("package-update get: %v", err)
+	}
+	if !strings.Contains(out.String(), "pu1") {
+		t.Errorf("expected pu1 in output, got: %s", out.String())
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/package_update") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestPackageUpdateGet_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"message":"not found"}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"package-update", "get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestPackageUpdateApply(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"package_updates","id":"pu2","attributes":{"deployment_id":"d1","from_version":"1.0.0","to_version":"1.1.0","status":"applying"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"package-update", "apply"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("package-update apply: %v", err)
+	}
+	if !strings.Contains(out.String(), "pu2") {
+		t.Errorf("expected pu2 in output, got: %s", out.String())
+	}
+	if mt.calls[0].Method != http.MethodPost {
+		t.Errorf("expected POST, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/package_update") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestPackageUpdateApply_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"title":"update already in progress"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"package-update", "apply"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err == nil {
+		t.Fatal("expected error for 422")
+	}
+}
+
+func TestRollout(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"rollouts","id":"ro1","attributes":{"deployment_id":"d1","status":"triggered"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollout"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("rollout: %v", err)
+	}
+	if !strings.Contains(out.String(), "d1") {
+		t.Errorf("expected deployment_id in output, got: %s", out.String())
+	}
+	if mt.calls[0].Method != http.MethodPost {
+		t.Errorf("expected POST, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/rollout") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestRollout_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"error":"deployment not ready"}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollout"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err == nil {
+		t.Fatal("expected error for 422")
+	}
+}
+
 func TestUpdate_NewScalarFields(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
 		{200, `{"data":{"type":"deployments","id":"d1","links":{"self":"/api/v1/deployments/d1"},"attributes":{"name":"my-deploy","project_id":"p1","status":"deployed"}}}`},

@@ -20,34 +20,91 @@ const clusterResourceType = "clusters"
 
 // Cluster is the API response shape for a cluster resource.
 type Cluster struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	ClusterType     string `json:"cluster_type"`
-	ParentClusterID string `json:"parent_cluster_id,omitempty"`
-	Status          string `json:"status,omitempty"`
-	CreatedAt       string `json:"created_at,omitempty"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
+	ID                        string `json:"id"`
+	Name                      string `json:"name"`
+	ClusterType               string `json:"cluster_type"`
+	ParentClusterID           string `json:"parent_cluster_id,omitempty"`
+	Namespace                 string `json:"namespace,omitempty"`
+	Status                    string `json:"status,omitempty"`
+	ErrorMessage              string `json:"error_message,omitempty"`
+	ProvisioningMessage       string `json:"provisioning_message,omitempty"`
+	ProvisioningStartedAt     string `json:"provisioning_started_at,omitempty"`
+	ProvisioningCompletedAt   string `json:"provisioning_completed_at,omitempty"`
+	FluxBootstrapStatus       string `json:"flux_bootstrap_status,omitempty"`
+	FluxBootstrapError        string `json:"flux_bootstrap_error,omitempty"`
+	FluxBootstrapStartedAt    string `json:"flux_bootstrap_started_at,omitempty"`
+	FluxBootstrapCompletedAt  string `json:"flux_bootstrap_completed_at,omitempty"`
+	GitopsRepoURL             string `json:"gitops_repo_url,omitempty"`
+	HealthStatus              string `json:"health_status,omitempty"`
+	HealthCheckError          string `json:"health_check_error,omitempty"`
+	LastHealthCheckAt         string `json:"last_health_check_at,omitempty"`
+	APIEndpoint               string `json:"api_endpoint,omitempty"`
+	PlatformBootstrapStatus   string `json:"platform_bootstrap_status,omitempty"`
+	PlatformBootstrapError    string `json:"platform_bootstrap_error,omitempty"`
+	K8sBaseHostname           string `json:"k8s_base_hostname,omitempty"`
+	KubeconfigExportNamespace string `json:"kubeconfig_export_namespace,omitempty"`
+	ClusterIssuerName         string `json:"cluster_issuer_name,omitempty"`
+	IngressClassName          string `json:"ingress_class_name,omitempty"`
+	CreatedAt                 string `json:"created_at,omitempty"`
 }
 
 type clusterAttrs struct {
-	Name            string `json:"name"`
-	ClusterType     string `json:"cluster_type"`
-	ParentClusterID string `json:"parent_cluster_id,omitempty"`
-	Status          string `json:"status,omitempty"`
-	CreatedAt       string `json:"created_at,omitempty"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
+	Name                      string `json:"name"`
+	ClusterType               string `json:"cluster_type"`
+	ParentClusterID           string `json:"parent_cluster_id,omitempty"`
+	Namespace                 string `json:"namespace,omitempty"`
+	Status                    string `json:"status,omitempty"`
+	ErrorMessage              string `json:"error_message,omitempty"`
+	ProvisioningMessage       string `json:"provisioning_message,omitempty"`
+	ProvisioningStartedAt     string `json:"provisioning_started_at,omitempty"`
+	ProvisioningCompletedAt   string `json:"provisioning_completed_at,omitempty"`
+	FluxBootstrapStatus       string `json:"flux_bootstrap_status,omitempty"`
+	FluxBootstrapError        string `json:"flux_bootstrap_error,omitempty"`
+	FluxBootstrapStartedAt    string `json:"flux_bootstrap_started_at,omitempty"`
+	FluxBootstrapCompletedAt  string `json:"flux_bootstrap_completed_at,omitempty"`
+	GitopsRepoURL             string `json:"gitops_repo_url,omitempty"`
+	HealthStatus              string `json:"health_status,omitempty"`
+	HealthCheckError          string `json:"health_check_error,omitempty"`
+	LastHealthCheckAt         string `json:"last_health_check_at,omitempty"`
+	APIEndpoint               string `json:"api_endpoint,omitempty"`
+	PlatformBootstrapStatus   string `json:"platform_bootstrap_status,omitempty"`
+	PlatformBootstrapError    string `json:"platform_bootstrap_error,omitempty"`
+	K8sBaseHostname           string `json:"k8s_base_hostname,omitempty"`
+	KubeconfigExportNamespace string `json:"kubeconfig_export_namespace,omitempty"`
+	ClusterIssuerName         string `json:"cluster_issuer_name,omitempty"`
+	IngressClassName          string `json:"ingress_class_name,omitempty"`
+	CreatedAt                 string `json:"created_at,omitempty"`
 }
 
 func clusterFromResource(r httpclient.Resource[clusterAttrs]) Cluster {
 	a := r.Attributes
 	return Cluster{
-		ID:              r.ID,
-		Name:            a.Name,
-		ClusterType:     a.ClusterType,
-		ParentClusterID: a.ParentClusterID,
-		Status:          a.Status,
-		CreatedAt:       a.CreatedAt,
-		UpdatedAt:       a.UpdatedAt,
+		ID:                        r.ID,
+		Name:                      a.Name,
+		ClusterType:               a.ClusterType,
+		ParentClusterID:           a.ParentClusterID,
+		Namespace:                 a.Namespace,
+		Status:                    a.Status,
+		ErrorMessage:              a.ErrorMessage,
+		ProvisioningMessage:       a.ProvisioningMessage,
+		ProvisioningStartedAt:     a.ProvisioningStartedAt,
+		ProvisioningCompletedAt:   a.ProvisioningCompletedAt,
+		FluxBootstrapStatus:       a.FluxBootstrapStatus,
+		FluxBootstrapError:        a.FluxBootstrapError,
+		FluxBootstrapStartedAt:    a.FluxBootstrapStartedAt,
+		FluxBootstrapCompletedAt:  a.FluxBootstrapCompletedAt,
+		GitopsRepoURL:             a.GitopsRepoURL,
+		HealthStatus:              a.HealthStatus,
+		HealthCheckError:          a.HealthCheckError,
+		LastHealthCheckAt:         a.LastHealthCheckAt,
+		APIEndpoint:               a.APIEndpoint,
+		PlatformBootstrapStatus:   a.PlatformBootstrapStatus,
+		PlatformBootstrapError:    a.PlatformBootstrapError,
+		K8sBaseHostname:           a.K8sBaseHostname,
+		KubeconfigExportNamespace: a.KubeconfigExportNamespace,
+		ClusterIssuerName:         a.ClusterIssuerName,
+		IngressClassName:          a.IngressClassName,
+		CreatedAt:                 a.CreatedAt,
 	}
 }
 
@@ -86,6 +143,22 @@ type fluxBootstrapAttrs struct {
 	FluxBootstrapError  string `json:"flux_bootstrap_error,omitempty"`
 }
 
+// provisioningAttrs matches ProvisioningAttributes in the spec.
+type provisioningAttrs struct {
+	Name                    string `json:"name,omitempty"`
+	Status                  string `json:"status,omitempty"`
+	ErrorMessage            string `json:"error_message,omitempty"`
+	ProvisioningMessage     string `json:"provisioning_message,omitempty"`
+	ProvisioningStartedAt   string `json:"provisioning_started_at,omitempty"`
+	ProvisioningCompletedAt string `json:"provisioning_completed_at,omitempty"`
+}
+
+// exposureAttrs matches ExposureResource.attributes in the spec.
+type exposureAttrs struct {
+	Name   string `json:"name,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
 var clusterCols = []output.Column{
 	{Header: "ID"},
 	{Header: "NAME"},
@@ -112,6 +185,9 @@ func NewCommand() *cobra.Command {
 		newDeleteCmd(),
 		newHealthCheckCmd(),
 		newFluxBootstrapCmd(),
+		newFluxBootstrapStatusCmd(),
+		newProvisioningCmd(),
+		newExposeCmd(),
 	)
 	return cmd
 }
@@ -329,7 +405,7 @@ func newHealthCheckCmd() *cobra.Command {
 func newFluxBootstrapCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "flux-bootstrap <id>",
-		Short: "Run flux bootstrap on a cluster",
+		Short: "Trigger Flux bootstrap on a cluster",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
@@ -345,6 +421,68 @@ func newFluxBootstrapCmd() *cobra.Command {
 			}
 			selfPath := jsonapi.SelfPath(fetched.SelfLink, initialPath)
 			res, err := httpclient.PostJSONAPISingle[fluxBootstrapAttrs](cmd.Context(), client, selfPath+"/flux_bootstrap", nil)
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(res.Attributes)
+		},
+	}
+}
+
+func newFluxBootstrapStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "flux-bootstrap-status <id>",
+		Short: "Get Flux bootstrap status for a cluster",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			path := "/api/v1/clusters/" + url.PathEscape(args[0]) + "/flux_bootstrap"
+			res, err := jsonapi.GetSingle[fluxBootstrapAttrs](cmd.Context(), client, path)
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(res.Resource.Attributes)
+		},
+	}
+}
+
+func newProvisioningCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "provisioning <id>",
+		Short: "Get provisioning status for a virtual cluster",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			path := "/api/v1/clusters/" + url.PathEscape(args[0]) + "/provisioning"
+			res, err := jsonapi.GetSingle[provisioningAttrs](cmd.Context(), client, path)
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(res.Resource.Attributes)
+		},
+	}
+}
+
+func newExposeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "expose <id>",
+		Short: "Expose a virtual cluster via the host ingress",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			if gf.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/clusters/%s/exposure\n", url.PathEscape(args[0]))
+				return err
+			}
+			path := "/api/v1/clusters/" + url.PathEscape(args[0]) + "/exposure"
+			res, err := httpclient.PostJSONAPISingle[exposureAttrs](cmd.Context(), client, path, nil)
 			if err != nil {
 				return err
 			}
