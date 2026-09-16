@@ -69,6 +69,8 @@ type Deployment struct {
 	GitopsLastReconciledAt  string            `json:"gitops_last_reconciled_at,omitempty"`
 	GitopsGithubFilesURL    string            `json:"gitops_github_files_url,omitempty"`
 	PublishError            string            `json:"publish_error,omitempty"`
+	IsAutoBlocked           *bool             `json:"is_auto_blocked,omitempty"`
+	IsPinned                *bool             `json:"is_pinned,omitempty"`
 	CreatedAt               string            `json:"created_at,omitempty"`
 	UpdatedAt               string            `json:"updated_at,omitempty"`
 }
@@ -114,6 +116,8 @@ type deploymentAttrs struct {
 	GitopsLastReconciledAt  string            `json:"gitops_last_reconciled_at,omitempty"`
 	GitopsGithubFilesURL    string            `json:"gitops_github_files_url,omitempty"`
 	PublishError            string            `json:"publish_error,omitempty"`
+	IsAutoBlocked           *bool             `json:"is_auto_blocked,omitempty"`
+	IsPinned                *bool             `json:"is_pinned,omitempty"`
 	CreatedAt               string            `json:"created_at,omitempty"`
 	UpdatedAt               string            `json:"updated_at,omitempty"`
 }
@@ -162,9 +166,81 @@ func deploymentFromResource(r httpclient.Resource[deploymentAttrs]) Deployment {
 		GitopsLastReconciledAt:  a.GitopsLastReconciledAt,
 		GitopsGithubFilesURL:    a.GitopsGithubFilesURL,
 		PublishError:            a.PublishError,
+		IsAutoBlocked:           a.IsAutoBlocked,
+		IsPinned:                a.IsPinned,
 		CreatedAt:               a.CreatedAt,
 		UpdatedAt:               a.UpdatedAt,
 	}
+}
+
+// UpdateRun is the API response shape for an update_runs resource.
+type UpdateRun struct {
+	ID             string `json:"id"`
+	DeploymentID   string `json:"deployment_id,omitempty"`
+	PackageVersion string `json:"package_version,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Attempt        int    `json:"attempt,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty"`
+	StartedAt      string `json:"started_at,omitempty"`
+	CompletedAt    string `json:"completed_at,omitempty"`
+}
+
+type updateRunAttrs struct {
+	DeploymentID   string `json:"deployment_id,omitempty"`
+	PackageVersion string `json:"package_version,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Attempt        int    `json:"attempt,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty"`
+	StartedAt      string `json:"started_at,omitempty"`
+	CompletedAt    string `json:"completed_at,omitempty"`
+}
+
+// Pin is the API response shape for a pins resource.
+type Pin struct {
+	ID             string `json:"id"`
+	DeploymentID   string `json:"deployment_id,omitempty"`
+	PackageVersion string `json:"package_version,omitempty"`
+	IsAutoBlocked  *bool  `json:"is_auto_blocked,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+}
+
+type pinAttrs struct {
+	DeploymentID   string `json:"deployment_id,omitempty"`
+	PackageVersion string `json:"package_version,omitempty"`
+	IsAutoBlocked  *bool  `json:"is_auto_blocked,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+}
+
+// PackageUpdate is the API response shape for a package_updates resource.
+type PackageUpdate struct {
+	ID           string `json:"id"`
+	DeploymentID string `json:"deployment_id,omitempty"`
+	FromVersion  string `json:"from_version,omitempty"`
+	ToVersion    string `json:"to_version,omitempty"`
+	Status       string `json:"status,omitempty"`
+	CreatedAt    string `json:"created_at,omitempty"`
+}
+
+type packageUpdateAttrs struct {
+	DeploymentID string `json:"deployment_id,omitempty"`
+	FromVersion  string `json:"from_version,omitempty"`
+	ToVersion    string `json:"to_version,omitempty"`
+	Status       string `json:"status,omitempty"`
+	CreatedAt    string `json:"created_at,omitempty"`
+}
+
+// Rollout is the API response shape for a rollouts resource.
+type Rollout struct {
+	ID           string `json:"id"`
+	DeploymentID string `json:"deployment_id,omitempty"`
+	Status       string `json:"status,omitempty"`
+	CreatedAt    string `json:"created_at,omitempty"`
+}
+
+type rolloutAttrs struct {
+	DeploymentID string `json:"deployment_id,omitempty"`
+	Status       string `json:"status,omitempty"`
+	CreatedAt    string `json:"created_at,omitempty"`
 }
 
 // deploymentWriteAttrs matches DeploymentRequest.data.attributes in the spec.
@@ -227,6 +303,11 @@ func NewCommand() *cobra.Command {
 		newCreateCmd(),
 		newUpdateCmd(),
 		newDeleteCmd(),
+		newUpdateRunsCmd(),
+		newPinCmd(),
+		newUnpinCmd(),
+		newPackageUpdateCmd(),
+		newRolloutCmd(),
 	)
 	return cmd
 }
@@ -729,6 +810,216 @@ func newDeleteCmd() *cobra.Command {
 				return err
 			}
 			return client.Delete(cmd.Context(), jsonapi.SelfPath(fetched.SelfLink, initialPath))
+		},
+	}
+}
+
+func newUpdateRunsCmd() *cobra.Command {
+	updateRunCols := []output.Column{
+		{Header: "ID"},
+		{Header: "DEPLOYMENT_ID"},
+		{Header: "STATUS"},
+		{Header: "ATTEMPT"},
+	}
+	cmd := &cobra.Command{
+		Use:   "update-runs",
+		Short: "Manage deployment update runs",
+	}
+
+	listCmd := &cobra.Command{
+		Use:   "list <deployment_id>",
+		Short: "List update runs for a deployment",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			renderer := ctxutil.RendererFrom(cmd.Context())
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/update_runs"
+			resources, err := jsonapi.GetAllPages[updateRunAttrs](cmd.Context(), client, path)
+			if err != nil {
+				return err
+			}
+			var rows [][]string
+			var items []UpdateRun
+			for _, r := range resources {
+				ur := UpdateRun{
+					ID:             r.ID,
+					DeploymentID:   r.Attributes.DeploymentID,
+					PackageVersion: r.Attributes.PackageVersion,
+					Status:         r.Attributes.Status,
+					Attempt:        r.Attributes.Attempt,
+					ErrorMessage:   r.Attributes.ErrorMessage,
+					StartedAt:      r.Attributes.StartedAt,
+					CompletedAt:    r.Attributes.CompletedAt,
+				}
+				items = append(items, ur)
+				rows = append(rows, []string{ur.ID, ur.DeploymentID, ur.Status, fmt.Sprintf("%d", ur.Attempt)})
+			}
+			return renderer.Render(updateRunCols, rows, httpclient.Envelope[[]UpdateRun]{Data: items})
+		},
+	}
+
+	getCmd := &cobra.Command{
+		Use:   "get <deployment_id> <run_id>",
+		Short: "Get a deployment update run by ID",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			renderer := ctxutil.RendererFrom(cmd.Context())
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/update_runs/" + url.PathEscape(args[1])
+			res, err := jsonapi.GetSingle[updateRunAttrs](cmd.Context(), client, path)
+			if err != nil {
+				return err
+			}
+			ur := UpdateRun{
+				ID:             res.Resource.ID,
+				DeploymentID:   res.Resource.Attributes.DeploymentID,
+				PackageVersion: res.Resource.Attributes.PackageVersion,
+				Status:         res.Resource.Attributes.Status,
+				Attempt:        res.Resource.Attributes.Attempt,
+				ErrorMessage:   res.Resource.Attributes.ErrorMessage,
+				StartedAt:      res.Resource.Attributes.StartedAt,
+				CompletedAt:    res.Resource.Attributes.CompletedAt,
+			}
+			return renderer.Render(updateRunCols, [][]string{{ur.ID, ur.DeploymentID, ur.Status, fmt.Sprintf("%d", ur.Attempt)}}, httpclient.Envelope[UpdateRun]{Data: ur})
+		},
+	}
+
+	cmd.AddCommand(listCmd, getCmd)
+	return cmd
+}
+
+func newPinCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pin <deployment_id>",
+		Short: "Pin a deployment to its current package version",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			if gf.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/deployments/%s/pin\n", url.PathEscape(args[0]))
+				return err
+			}
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/pin"
+			res, err := httpclient.PostJSONAPISingle[pinAttrs](cmd.Context(), client, path, nil)
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(res.Attributes)
+		},
+	}
+}
+
+func newUnpinCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "unpin <deployment_id>",
+		Short: "Remove the pin from a deployment",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			if gf.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "DELETE /api/v1/deployments/%s/pin\n", url.PathEscape(args[0]))
+				return err
+			}
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/pin"
+			return client.Delete(cmd.Context(), path)
+		},
+	}
+}
+
+func newPackageUpdateCmd() *cobra.Command {
+	puCols := []output.Column{
+		{Header: "ID"},
+		{Header: "DEPLOYMENT_ID"},
+		{Header: "FROM_VERSION"},
+		{Header: "TO_VERSION"},
+		{Header: "STATUS"},
+	}
+	cmd := &cobra.Command{
+		Use:   "package-update",
+		Short: "Manage deployment package updates",
+	}
+
+	getCmd := &cobra.Command{
+		Use:   "get <deployment_id>",
+		Short: "Get the latest package update for a deployment",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			renderer := ctxutil.RendererFrom(cmd.Context())
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/package_update"
+			res, err := jsonapi.GetSingle[packageUpdateAttrs](cmd.Context(), client, path)
+			if err != nil {
+				return err
+			}
+			pu := PackageUpdate{
+				ID:           res.Resource.ID,
+				DeploymentID: res.Resource.Attributes.DeploymentID,
+				FromVersion:  res.Resource.Attributes.FromVersion,
+				ToVersion:    res.Resource.Attributes.ToVersion,
+				Status:       res.Resource.Attributes.Status,
+				CreatedAt:    res.Resource.Attributes.CreatedAt,
+			}
+			return renderer.Render(puCols, [][]string{{pu.ID, pu.DeploymentID, pu.FromVersion, pu.ToVersion, pu.Status}}, httpclient.Envelope[PackageUpdate]{Data: pu})
+		},
+	}
+
+	applyCmd := &cobra.Command{
+		Use:   "apply <deployment_id>",
+		Short: "Apply a package update to a deployment",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			renderer := ctxutil.RendererFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			if gf.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/deployments/%s/package_update\n", url.PathEscape(args[0]))
+				return err
+			}
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/package_update"
+			res, err := httpclient.PostJSONAPISingle[packageUpdateAttrs](cmd.Context(), client, path, nil)
+			if err != nil {
+				return err
+			}
+			pu := PackageUpdate{
+				ID:           res.ID,
+				DeploymentID: res.Attributes.DeploymentID,
+				FromVersion:  res.Attributes.FromVersion,
+				ToVersion:    res.Attributes.ToVersion,
+				Status:       res.Attributes.Status,
+				CreatedAt:    res.Attributes.CreatedAt,
+			}
+			return renderer.Render(puCols, [][]string{{pu.ID, pu.DeploymentID, pu.FromVersion, pu.ToVersion, pu.Status}}, httpclient.Envelope[PackageUpdate]{Data: pu})
+		},
+	}
+
+	cmd.AddCommand(getCmd, applyCmd)
+	return cmd
+}
+
+func newRolloutCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rollout <deployment_id>",
+		Short: "Trigger a rollout for a deployment",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			if gf.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/deployments/%s/rollout\n", url.PathEscape(args[0]))
+				return err
+			}
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/rollout"
+			res, err := httpclient.PostJSONAPISingle[rolloutAttrs](cmd.Context(), client, path, nil)
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(res.Attributes)
 		},
 	}
 }

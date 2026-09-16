@@ -70,6 +70,28 @@ The active context can be overridden per-command with `--context <name>` or `CLU
 
 > **Pagination**: All `list` subcommands automatically follow the server's `links.next` pagination links and return the complete result set across all pages. There is no need to pass page parameters manually.
 
+### status
+
+Check the running API server's deploy info (unauthenticated).
+
+```bash
+clusterctl status
+```
+
+### auth
+
+```bash
+clusterctl auth whoami   # verify token and return identity (organization, owner, token)
+```
+
+### registrations
+
+Register a new organization and receive an API bearer token (unauthenticated).
+
+```bash
+clusterctl registrations create --owner-email <email> --label <token-name>
+```
+
 ### clusters
 
 ```bash
@@ -84,10 +106,13 @@ clusterctl clusters update <id> [--k8s-base-hostname <hostname>] \
   [--ingress-class-name <name>] [--gitops-repo-url <url>] [--kubeconfig <yaml>]
 clusterctl clusters delete <id>
 clusterctl clusters health-check <id>
-clusterctl clusters flux-bootstrap <id>
+clusterctl clusters flux-bootstrap <id>          # trigger Flux bootstrap (POST)
+clusterctl clusters flux-bootstrap-status <id>   # read Flux bootstrap status (GET)
+clusterctl clusters provisioning <id>            # read provisioning status for a virtual cluster
+clusterctl clusters expose <id>                  # expose a virtual cluster via host ingress
 ```
 
-> **Note:** `clusters update` accepts only infrastructure-level fields (`k8s-base-hostname`, `kubeconfig-export-namespace`, `cluster-issuer-name`, `ingress-class-name`, `gitops-repo-url`, `kubeconfig`). Cluster name and type cannot be changed after creation.
+> **Note:** `clusters update` accepts only infrastructure-level fields. Cluster name and type cannot be changed after creation.
 
 ### projects
 
@@ -106,18 +131,50 @@ clusterctl packages list
 clusterctl packages get <id>
 clusterctl packages create --name <name> [--description <desc>] [--source-type <helm|git>] \
   [--source-url <url>] [--source-branch <branch>] [--source-path <path>] \
-  [--source-chart <chart>] [--source-tag-pattern <pattern>]
+  [--source-chart <chart>] [--source-tag-pattern <pattern>] \
+  [--tags <comma-list-or-json-array>]
 clusterctl packages update <id> [--name <name>] [--description <desc>] \
   [--source-type <type>] [--source-url <url>] [--source-branch <branch>] \
-  [--source-path <path>] [--source-chart <chart>] [--source-tag-pattern <pattern>]
+  [--source-path <path>] [--source-chart <chart>] [--source-tag-pattern <pattern>] \
+  [--tags <comma-list-or-json-array>]
 clusterctl packages delete <id>
+```
+
+#### packages releases
+
+```bash
+clusterctl packages releases list <package_id>
+clusterctl packages releases get <package_id> <release_id>
+```
+
+### templates
+
+List and inspect deployment templates available to your organization.
+
+```bash
+clusterctl templates list
+clusterctl templates get <id>
+```
+
+### package-update-policies
+
+Package update policies control automatic update behavior per deployment.
+
+```bash
+clusterctl package-update-policies list
+clusterctl package-update-policies create --deployment-id <id> \
+  [--package-id <id>] [--max-attempts <n>] [--is-blocked]
+clusterctl package-update-policies get <id>
+clusterctl package-update-policies update <id> \
+  [--deployment-id <id>] [--package-id <id>] [--max-attempts <n>] [--is-blocked]
+clusterctl package-update-policies delete <id>
 ```
 
 ### deployments
 
 ```bash
 clusterctl deployments list
-clusterctl deployments get <id>
+clusterctl deployments get <id>    # response includes is_auto_blocked and is_pinned fields
 clusterctl deployments create --project-id <id> --name <name> --namespace <namespace> \
   --package-name <name> --package-version <ver> [--cluster-id <id>] \
   [--values-override <yaml>] [--environment-preset <name>] [--is-ai] \
@@ -149,7 +206,7 @@ clusterctl deployments update <id> [--project-id <id>] [--cluster-id <id>] [--na
 clusterctl deployments delete <id>
 ```
 
-> **Note:** `--package-version` is required for `deployments create`. `--cluster-id` is optional (the deployment can be created without a cluster assignment).
+> **Note:** `--package-version` is required for `deployments create`. `--cluster-id` is optional. The `get` response includes `is_auto_blocked` (true when automatic updates are blocked by a package update policy) and `is_pinned`.
 
 **Complex JSON flags** accept inline JSON strings:
 
@@ -159,7 +216,36 @@ clusterctl deployments delete <id>
 | `--tolerations` | JSON array | `'[{"key":"dedicated","operator":"Equal","value":"gpu","effect":"NoSchedule"}]'` |
 | `--template-extra-resources` | JSON object (filename → YAML string) | `'{"extra.yaml":"apiVersion: v1\nkind: ConfigMap\n..."}'` |
 
-The CLI validates the JSON shape locally before sending the request.
+#### deployments update-runs
+
+```bash
+clusterctl deployments update-runs list <deployment_id>
+clusterctl deployments update-runs get <deployment_id> <run_id>
+```
+
+#### deployments pin / unpin
+
+Pin a deployment to its current package version (blocks automatic updates):
+
+```bash
+clusterctl deployments pin <deployment_id>
+clusterctl deployments unpin <deployment_id>
+```
+
+#### deployments package-update
+
+```bash
+clusterctl deployments package-update get <deployment_id>    # get latest package update record
+clusterctl deployments package-update apply <deployment_id>  # apply a pending package update
+```
+
+#### deployments rollout
+
+Trigger a manual rollout for a deployment:
+
+```bash
+clusterctl deployments rollout <deployment_id>
+```
 
 ### secrets
 
@@ -191,9 +277,14 @@ clusterctl ai
 ```
 
 Common workflows included:
-- **Provision a vCluster** — auth, create virtual cluster, health-check
-- **Create a package then a deployment** — register a Helm chart, deploy to a cluster
+- **Verify identity and service status** — auth whoami, status
+- **Provision a vCluster** — auth, create virtual cluster, check provisioning, health-check
+- **Create a package then a deployment** — register a Helm chart, browse releases, deploy
 - **Materialize a secret** — create a secret, list it, materialize to clusters
+- **Check deployment auto-block status and remove a pin** — get deployment (is_auto_blocked/is_pinned), unpin
+- **Review and manage package update policies** — list, create, get, update policies
+- **Trigger a deployment rollout and inspect update runs** — package-update apply, update-runs list/get, rollout
+- **Browse available deployment templates** — templates list/get
 
 ### version
 
