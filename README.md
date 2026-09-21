@@ -189,7 +189,7 @@ clusterctl deployments create --project-id <id> --name <name> --namespace <names
   [--canary-max-weight <pct>] [--canary-success-threshold <0-1>] \
   [--canary-error-threshold <0-1>] [--canary-latency-p99-ms <ms>] \
   [--node-selector <json>] [--tolerations <json>] \
-  [--template-extra-resources <json>]
+  [--template-extra-resources <json>] [--template-values <json>]
 clusterctl deployments update <id> [--project-id <id>] [--cluster-id <id>] [--name <name>] \
   [--namespace <namespace>] [--package-name <name>] [--package-version <ver>] \
   [--values-override <yaml>] [--environment-preset <name>] [--is-ai] \
@@ -203,7 +203,7 @@ clusterctl deployments update <id> [--project-id <id>] [--cluster-id <id>] [--na
   [--canary-max-weight <pct>] [--canary-success-threshold <0-1>] \
   [--canary-error-threshold <0-1>] [--canary-latency-p99-ms <ms>] \
   [--node-selector <json>] [--tolerations <json>] \
-  [--template-extra-resources <json>]
+  [--template-extra-resources <json>] [--template-values <json>]
 clusterctl deployments delete <id>
 ```
 
@@ -216,6 +216,7 @@ clusterctl deployments delete <id>
 | `--node-selector` | JSON object | `'{"kubernetes.io/os":"linux"}'` |
 | `--tolerations` | JSON array | `'[{"key":"dedicated","operator":"Equal","value":"gpu","effect":"NoSchedule"}]'` |
 | `--template-extra-resources` | JSON object (filename → YAML string) | `'{"extra.yaml":"apiVersion: v1\nkind: ConfigMap\n..."}'` |
+| `--template-values` | JSON object (arbitrary key-value inputs) | `'{"image_repository":"ghcr.io/foo/bar","port":8080}'` |
 
 #### deployments update-runs
 
@@ -246,6 +247,37 @@ Trigger a manual rollout for a deployment:
 
 ```bash
 clusterctl deployments rollout <deployment_id>
+```
+
+#### deployments revisions
+
+List the recorded image revisions and their health for a deployment:
+
+```bash
+clusterctl deployments revisions <deployment_id>
+```
+
+#### deployments rollback
+
+Roll back a deployment to a previous healthy revision. Without `--revision`, the API selects the most recent healthy revision. A successful rollback places a hold on image automation (Flux) until the hold is released.
+
+```bash
+clusterctl deployments rollback <deployment_id>
+clusterctl deployments rollback <deployment_id> --revision <revision_id>
+clusterctl deployments rollback <deployment_id> --reason "latency spike"
+```
+
+| Flag | Description |
+|------|-------------|
+| `--revision` | ID of a specific revision to target (default: previous healthy) |
+| `--reason` | Human-readable reason for the rollback |
+
+#### deployments rollback release
+
+Release the image-automation hold placed by a rollback, resuming Flux automation:
+
+```bash
+clusterctl deployments rollback release <deployment_id>
 ```
 
 ### secrets
@@ -285,6 +317,7 @@ Common workflows included:
 - **Check deployment auto-block status and remove a pin** — get deployment (is_auto_blocked/is_pinned), unpin
 - **Review and manage package update policies** — list, create, get, update policies
 - **Trigger a deployment rollout and inspect update runs** — package-update apply, update-runs list/get, rollout
+- **Roll back a deployment and release the hold** — deployments revisions, rollback, rollback release
 - **Browse available deployment templates** — templates list/get
 
 ### version
