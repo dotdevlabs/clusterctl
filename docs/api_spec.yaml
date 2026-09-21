@@ -450,6 +450,7 @@ components:
         source_path: { type: string, nullable: true }
         source_chart: { type: string, nullable: true }
         source_tag_pattern: { type: string, nullable: true }
+        render_mode: { type: string, nullable: true, description: "Template slug (e.g. 'rails', 'cloudflared', 'asciinema') or null for source-native packages" }
         tags: { type: array, items: { type: string } }
         versions: { type: array, items: { type: string } }
         created_at: { type: string, format: date-time }
@@ -507,6 +508,7 @@ components:
                 source_path: { type: string }
                 source_chart: { type: string }
                 source_tag_pattern: { type: string }
+                render_mode: { type: string, description: "Template slug; omit or null for source-native packages" }
                 tags:
                   type: array
                   items: { type: string }
@@ -547,11 +549,16 @@ components:
         canary_latency_p99_ms: { type: integer, nullable: true }
         node_selector: { type: object, additionalProperties: { type: string }, nullable: true }
         tolerations: { type: array, items: { type: object }, nullable: true }
+        template_values:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: "Input key-value map for template-backed deployments (e.g. image_repository, app_name)"
         template_extra_resources:
           type: object
-          additionalProperties: { type: string }
           nullable: true
-          description: "Extra template files injected into the deployment, as a filename→YAML-content map"
+          additionalProperties: { type: string }
+          description: "Extra manifest files to inject into the template render output ({ filename => content })"
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         # show-only flux fields
@@ -562,8 +569,6 @@ components:
         gitops_last_reconciled_at: { type: string, format: date-time, nullable: true }
         gitops_github_files_url: { type: string, nullable: true }
         publish_error: { type: string, nullable: true, description: "GitOps publish error from create/update" }
-        is_auto_blocked: { type: boolean, description: "True when automatic updates are blocked by policy" }
-        is_pinned: { type: boolean }
 
     DeploymentResource:
       type: object
@@ -647,10 +652,14 @@ components:
                       operator: { type: string }
                       value: { type: string }
                       effect: { type: string }
+                template_values:
+                  type: object
+                  additionalProperties: true
+                  description: "Input key-value map for template-backed deployments"
                 template_extra_resources:
                   type: object
                   additionalProperties: { type: string }
-                  description: "Extra template files as a filename→YAML-content map"
+                  description: "Extra manifest files ({ filename => yaml content }); nullable"
 
     # ── Templates ─────────────────────────────────────────────────────────────
     TemplateInput:
@@ -812,210 +821,7 @@ components:
         data:
           $ref: "#/components/schemas/ExposureResource"
 
-    # ── Package Releases ──────────────────────────────────────────────────────
-    PackageReleaseAttributes:
-      type: object
-      properties:
-        version: { type: string }
-        released_at: { type: string, format: date-time, nullable: true }
-
-    PackageReleaseResource:
-      type: object
-      required: [links]
-      properties:
-        type: { type: string, enum: [package_releases] }
-        id: { type: string }
-        links:
-          $ref: "#/components/schemas/ResourceLinks"
-        attributes:
-          $ref: "#/components/schemas/PackageReleaseAttributes"
-
-    PackageReleaseDocument:
-      type: object
-      required: [data]
-      properties:
-        data:
-          $ref: "#/components/schemas/PackageReleaseResource"
-
-    PackageReleaseListDocument:
-      type: object
-      required: [data, meta, links]
-      properties:
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/PackageReleaseResource"
-        meta:
-          $ref: "#/components/schemas/ListMeta"
-        links:
-          $ref: "#/components/schemas/CollectionLinks"
-
-    # ── Package Update Policies ────────────────────────────────────────────────
-    PackageUpdatePolicyAttributes:
-      type: object
-      properties:
-        deployment_id: { type: string }
-        package_id: { type: string, nullable: true }
-        max_attempts: { type: integer, nullable: true }
-        is_blocked: { type: boolean }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-
-    PackageUpdatePolicyResource:
-      type: object
-      required: [links]
-      properties:
-        type: { type: string, enum: [package_update_policies] }
-        id: { type: string }
-        links:
-          $ref: "#/components/schemas/ResourceLinks"
-        attributes:
-          $ref: "#/components/schemas/PackageUpdatePolicyAttributes"
-
-    PackageUpdatePolicyDocument:
-      type: object
-      required: [data]
-      properties:
-        data:
-          $ref: "#/components/schemas/PackageUpdatePolicyResource"
-
-    PackageUpdatePolicyListDocument:
-      type: object
-      required: [data, meta, links]
-      properties:
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/PackageUpdatePolicyResource"
-        meta:
-          $ref: "#/components/schemas/ListMeta"
-        links:
-          $ref: "#/components/schemas/CollectionLinks"
-
-    PackageUpdatePolicyRequest:
-      type: object
-      required: [data]
-      properties:
-        data:
-          type: object
-          required: [type, attributes]
-          properties:
-            type: { type: string, enum: [package_update_policies] }
-            attributes:
-              type: object
-              required: [deployment_id]
-              properties:
-                deployment_id: { type: string }
-                package_id: { type: string }
-                max_attempts: { type: integer }
-                is_blocked: { type: boolean }
-
-    # ── Update Runs ────────────────────────────────────────────────────────────
-    UpdateRunAttributes:
-      type: object
-      properties:
-        deployment_id: { type: string }
-        package_version: { type: string, nullable: true }
-        status: { type: string }
-        attempt: { type: integer }
-        error_message: { type: string, nullable: true }
-        started_at: { type: string, format: date-time, nullable: true }
-        completed_at: { type: string, format: date-time, nullable: true }
-
-    UpdateRunResource:
-      type: object
-      required: [links]
-      properties:
-        type: { type: string, enum: [update_runs] }
-        id: { type: string }
-        links:
-          $ref: "#/components/schemas/ResourceLinks"
-        attributes:
-          $ref: "#/components/schemas/UpdateRunAttributes"
-
-    UpdateRunDocument:
-      type: object
-      required: [data]
-      properties:
-        data:
-          $ref: "#/components/schemas/UpdateRunResource"
-
-    UpdateRunListDocument:
-      type: object
-      required: [data, meta, links]
-      properties:
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/UpdateRunResource"
-        meta:
-          $ref: "#/components/schemas/ListMeta"
-        links:
-          $ref: "#/components/schemas/CollectionLinks"
-
-    # ── Pins ──────────────────────────────────────────────────────────────────
-    PinAttributes:
-      type: object
-      properties:
-        deployment_id: { type: string }
-        package_version: { type: string }
-        is_auto_blocked: { type: boolean }
-        created_at: { type: string, format: date-time }
-
-    PinResource:
-      type: object
-      required: [links]
-      properties:
-        type: { type: string, enum: [pins] }
-        id: { type: string }
-        links:
-          $ref: "#/components/schemas/ResourceLinks"
-        attributes:
-          $ref: "#/components/schemas/PinAttributes"
-
-    PinDocument:
-      type: object
-      required: [data]
-      properties:
-        data:
-          $ref: "#/components/schemas/PinResource"
-
-    # ── Package Updates ────────────────────────────────────────────────────────
-    PackageUpdateAttributes:
-      type: object
-      properties:
-        deployment_id: { type: string }
-        from_version: { type: string, nullable: true }
-        to_version: { type: string, nullable: true }
-        status: { type: string }
-        created_at: { type: string, format: date-time }
-
-    PackageUpdateResource:
-      type: object
-      required: [links]
-      properties:
-        type: { type: string, enum: [package_updates] }
-        id: { type: string }
-        links:
-          $ref: "#/components/schemas/ResourceLinks"
-        attributes:
-          $ref: "#/components/schemas/PackageUpdateAttributes"
-
-    PackageUpdateDocument:
-      type: object
-      required: [data]
-      properties:
-        data:
-          $ref: "#/components/schemas/PackageUpdateResource"
-
     # ── Rollouts ──────────────────────────────────────────────────────────────
-    RolloutAttributes:
-      type: object
-      properties:
-        deployment_id: { type: string }
-        status: { type: string }
-        created_at: { type: string, format: date-time }
-
     RolloutResource:
       type: object
       required: [links]
@@ -1025,7 +831,13 @@ components:
         links:
           $ref: "#/components/schemas/ResourceLinks"
         attributes:
-          $ref: "#/components/schemas/RolloutAttributes"
+          type: object
+          properties:
+            name: { type: string }
+            restarted_workloads:
+              type: array
+              items: { type: string }
+            restarted_at: { type: string, format: date-time }
 
     RolloutDocument:
       type: object
@@ -1120,9 +932,284 @@ components:
     NoContent:
       description: Resource deleted; no body returned
 
+    # ── Package update schemas ────────────────────────────────────────────────
+    PackageReleaseAttributes:
+      type: object
+      properties:
+        version:
+          type: string
+        source:
+          type: string
+          enum: [github_releases, github_tags, ghcr, unsupported]
+        source_url:
+          type: string
+          nullable: true
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+        digest:
+          type: string
+          nullable: true
+        discovered_at:
+          type: string
+          format: date-time
+        eligibility_status:
+          type: string
+          enum: [pending, eligible, deferred, skipped, blocked]
+        eligibility_reason:
+          type: string
+          nullable: true
+        is_security_patch:
+          type: boolean
+
+    PackageReleaseResource:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [package_releases]
+        attributes:
+          $ref: "#/components/schemas/PackageReleaseAttributes"
+
+    PackageReleaseDocument:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/PackageReleaseResource"
+
+    PackageReleaseListDocument:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageReleaseResource"
+        meta:
+          type: object
+
+    PackageUpdatePolicyAttributes:
+      type: object
+      properties:
+        updatable_type:
+          type: string
+          enum: [Organization, Project, Deployment]
+        updatable_id:
+          type: integer
+        enabled:
+          type: boolean
+        scope:
+          type: string
+          enum: [patch, minor, major]
+        allow_prerelease:
+          type: boolean
+        min_release_age_hours:
+          type: integer
+        check_cadence_hours:
+          type: integer
+        maintenance_window_start:
+          type: string
+          nullable: true
+          example: "02:00"
+        maintenance_window_end:
+          type: string
+          nullable: true
+          example: "04:00"
+        maintenance_window_days:
+          type: array
+          items:
+            type: string
+        health_timeout_minutes:
+          type: integer
+        auto_rollback:
+          type: boolean
+        security_auto_remediate:
+          type: boolean
+        max_auto_update_attempts:
+          type: integer
+          description: Maximum automatic attempts for a single target release before the deployment is blocked. Default 2.
+
+    PackageUpdatePolicyResource:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [package_update_policies]
+        attributes:
+          $ref: "#/components/schemas/PackageUpdatePolicyAttributes"
+
+    PackageUpdatePolicyDocument:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/PackageUpdatePolicyResource"
+
+    PackageUpdatePolicyListDocument:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PackageUpdatePolicyResource"
+
+    UpdateHop:
+      type: object
+      properties:
+        id:
+          type: string
+        from_version:
+          type: string
+        to_version:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, healthy, failed, rolled_back]
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        failure_reason:
+          type: string
+          nullable: true
+        commit_sha:
+          type: string
+          nullable: true
+
+    UpdateRunAttributes:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, running, completed, failed, rolled_back, cancelled]
+        trigger:
+          type: string
+          enum: [automatic, operator]
+        triggered_by:
+          type: string
+          nullable: true
+        started_version:
+          type: string
+        target_version:
+          type: string
+        current_hop_version:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        failure_reason:
+          type: string
+          nullable: true
+        policy_snapshot:
+          type: object
+        hops:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdateHop"
+
+    UpdateRunResource:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [update_runs]
+        attributes:
+          $ref: "#/components/schemas/UpdateRunAttributes"
+
+    UpdateRunDocument:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/UpdateRunResource"
+
+    UpdateRunListDocument:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdateRunResource"
+
+    UpdatePinAttributes:
+      type: object
+      properties:
+        pinned_version:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        pinned_by:
+          type: string
+        pinned_at:
+          type: string
+          format: date-time
+
+    PackageUpdatePreviewAttributes:
+      type: object
+      properties:
+        effective_policy:
+          type: object
+        policy_source:
+          type: string
+          enum: [deployment, project, organization, default]
+        is_pinned:
+          type: boolean
+        is_auto_blocked:
+          type: boolean
+          description: True when the deployment is pinned by the system after exhausting max_auto_update_attempts.
+        pin:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/UpdatePinAttributes"
+        next_eligible_version:
+          type: string
+          nullable: true
+        current_version:
+          type: string
+          nullable: true
+        desired_package_version:
+          type: string
+          nullable: true
+          description: Exact eligible release selected for the next update; null uses policy sequencing
+
+    PackageUpdateRequest:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [deployment_package_updates]
+            attributes:
+              type: object
+              properties:
+                desired_package_version:
+                  type: string
+                  nullable: true
+                  description: Exact eligible PackageRelease to install instead of the next policy-selected release
+
 paths:
   # ── Status (deploy info, unauthenticated) ────────────────────────────────────
   /status:
+    servers:
+      - url: /
+      - url: /api/v1
     get:
       operationId: getStatus
       summary: Return running build deploy info
@@ -1814,6 +1901,30 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /deployments/{deployment_id}/rollout:
+    parameters:
+      - name: deployment_id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      operationId: rolloutDeployment
+      summary: Trigger a rolling restart of a deployment's workloads
+      tags: [Deployments]
+      responses:
+        "202":
+          description: Rolling restart triggered
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/RolloutDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
   # ── Templates ────────────────────────────────────────────────────────────────
   /templates:
     get:
@@ -1863,330 +1974,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  # ── Package Releases ─────────────────────────────────────────────────────────
-  /packages/{package_id}/package_releases:
-    parameters:
-      - name: package_id
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      operationId: listPackageReleases
-      summary: List releases for a package
-      tags: [Packages]
-      parameters:
-        - name: page[number]
-          in: query
-          required: false
-          schema: { type: integer, default: 1, minimum: 1 }
-        - name: page[size]
-          in: query
-          required: false
-          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
-      responses:
-        "200":
-          description: Package release list
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PackageReleaseListDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /packages/{package_id}/package_releases/{id}:
-    parameters:
-      - name: package_id
-        in: path
-        required: true
-        schema: { type: string }
-      - name: id
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      operationId: getPackageRelease
-      summary: Get a package release by ID
-      tags: [Packages]
-      responses:
-        "200":
-          description: Package release
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PackageReleaseDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  # ── Package Update Policies ───────────────────────────────────────────────────
-  /package_update_policies:
-    get:
-      operationId: listPackageUpdatePolicies
-      summary: List package update policies
-      tags: [PackageUpdatePolicies]
-      parameters:
-        - name: page[number]
-          in: query
-          required: false
-          schema: { type: integer, default: 1, minimum: 1 }
-        - name: page[size]
-          in: query
-          required: false
-          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
-      responses:
-        "200":
-          description: Policy list
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PackageUpdatePolicyListDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    post:
-      operationId: createPackageUpdatePolicy
-      summary: Create a package update policy
-      tags: [PackageUpdatePolicies]
-      requestBody:
-        required: true
-        content:
-          application/vnd.api+json:
-            schema:
-              $ref: "#/components/schemas/PackageUpdatePolicyRequest"
-      responses:
-        "201":
-          description: Policy created
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PackageUpdatePolicyDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-
-  /package_update_policies/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      operationId: getPackageUpdatePolicy
-      summary: Get a package update policy by ID
-      tags: [PackageUpdatePolicies]
-      responses:
-        "200":
-          description: Policy
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PackageUpdatePolicyDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-    patch:
-      operationId: updatePackageUpdatePolicy
-      summary: Update a package update policy
-      tags: [PackageUpdatePolicies]
-      requestBody:
-        required: true
-        content:
-          application/vnd.api+json:
-            schema:
-              $ref: "#/components/schemas/PackageUpdatePolicyRequest"
-      responses:
-        "200":
-          description: Policy updated
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PackageUpdatePolicyDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-    delete:
-      operationId: deletePackageUpdatePolicy
-      summary: Delete a package update policy
-      tags: [PackageUpdatePolicies]
-      responses:
-        "204":
-          $ref: "#/components/responses/NoContent"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  # ── Deployment Update Runs ────────────────────────────────────────────────────
-  /deployments/{deployment_id}/update_runs:
-    parameters:
-      - name: deployment_id
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      operationId: listDeploymentUpdateRuns
-      summary: List update runs for a deployment
-      tags: [Deployments]
-      parameters:
-        - name: page[number]
-          in: query
-          required: false
-          schema: { type: integer, default: 1, minimum: 1 }
-        - name: page[size]
-          in: query
-          required: false
-          schema: { type: integer, default: 25, minimum: 1, maximum: 100 }
-      responses:
-        "200":
-          description: Update run list
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/UpdateRunListDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /deployments/{deployment_id}/update_runs/{id}:
-    parameters:
-      - name: deployment_id
-        in: path
-        required: true
-        schema: { type: string }
-      - name: id
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      operationId: getDeploymentUpdateRun
-      summary: Get a deployment update run by ID
-      tags: [Deployments]
-      responses:
-        "200":
-          description: Update run
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/UpdateRunDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  # ── Deployment Pins ───────────────────────────────────────────────────────────
-  /deployments/{deployment_id}/pin:
-    parameters:
-      - name: deployment_id
-        in: path
-        required: true
-        schema: { type: string }
-    post:
-      operationId: pinDeployment
-      summary: Pin a deployment to its current package version
-      tags: [Deployments]
-      responses:
-        "201":
-          description: Deployment pinned
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PinDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-    delete:
-      operationId: unpinDeployment
-      summary: Remove the pin from a deployment
-      tags: [Deployments]
-      responses:
-        "204":
-          $ref: "#/components/responses/NoContent"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  # ── Deployment Package Updates ────────────────────────────────────────────────
-  /deployments/{deployment_id}/package_update:
-    parameters:
-      - name: deployment_id
-        in: path
-        required: true
-        schema: { type: string }
-    get:
-      operationId: getDeploymentPackageUpdate
-      summary: Get the latest package update for a deployment
-      tags: [Deployments]
-      responses:
-        "200":
-          description: Package update
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PackageUpdateDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-    post:
-      operationId: createDeploymentPackageUpdate
-      summary: Apply a package update to a deployment
-      tags: [Deployments]
-      responses:
-        "201":
-          description: Package update applied
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/PackageUpdateDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-
-  # ── Deployment Rollouts ───────────────────────────────────────────────────────
-  /deployments/{deployment_id}/rollout:
-    parameters:
-      - name: deployment_id
-        in: path
-        required: true
-        schema: { type: string }
-    post:
-      operationId: createDeploymentRollout
-      summary: Trigger a rollout for a deployment
-      tags: [Deployments]
-      responses:
-        "201":
-          description: Rollout triggered
-          content:
-            application/vnd.api+json:
-              schema:
-                $ref: "#/components/schemas/RolloutDocument"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-
   # ── Connector Endpoints (application/json, per-cluster auth) ─────────────────
-  # The following paths (/connector_heartbeat, /connector/*) are for the
-  # in-cluster connector agent, not for operator CLI use. They use a per-cluster
-  # Bearer token and application/json payloads. They are intentionally excluded
-  # from clusterctl coverage. See cmd/conformance/conformance_test.go:connectorOps.
   /connector_heartbeat:
     post:
       operationId: connectorHeartbeatLegacy
@@ -2218,8 +2006,11 @@ paths:
       operationId: connectorHeartbeat
       summary: Connector heartbeat
       description: >
-        Called by in-cluster connector agents. Uses a per-cluster Bearer token.
-        Returns application/json.
+        Called by in-cluster connector agents and by the heartbeat-source workload
+        (co-deployed in clustercontrol-system). Uses a per-cluster Bearer token.
+        The optional `service` field identifies which critical in-cluster service
+        the ping is for (e.g. "loki"); when absent the ping is attributed to the
+        Connector agent itself. Returns application/json.
       security:
         - bearerAuth: []
       tags: [Connector]
@@ -2229,6 +2020,13 @@ paths:
           application/json:
             schema:
               type: object
+              properties:
+                service:
+                  type: string
+                  description: >
+                    Identifier of the in-cluster service whose health was verified
+                    before sending this ping (e.g. "loki"). Omit for Connector
+                    agent heartbeats.
       responses:
         "200":
           description: Heartbeat accepted
@@ -2316,3 +2114,508 @@ paths:
                 $ref: "#/components/schemas/ConnectorStatusResponse"
         "401":
           description: Invalid connector token
+
+  # ── Package Releases ──────────────────────────────────────────────────────
+  /packages/{package_id}/package_releases:
+    get:
+      operationId: listPackageReleases
+      summary: List discovered releases for a package
+      tags: [PackageReleases]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: package_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: eligibility_status
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of package releases
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageReleaseListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /packages/{package_id}/package_releases/{id}:
+    get:
+      operationId: getPackageRelease
+      summary: Get a single package release
+      tags: [PackageReleases]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: package_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Package release
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageReleaseDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Package Update Policies ────────────────────────────────────────────────
+  /package_update_policies:
+    get:
+      operationId: listPackageUpdatePolicies
+      summary: List update policies for the organization
+      tags: [PackageUpdatePolicies]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of policies
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageUpdatePolicyListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createPackageUpdatePolicy
+      summary: Create an update policy
+      tags: [PackageUpdatePolicies]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Policy created
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageUpdatePolicyDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /package_update_policies/{id}:
+    get:
+      operationId: getPackageUpdatePolicy
+      summary: Get a single update policy
+      tags: [PackageUpdatePolicies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageUpdatePolicyDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updatePackageUpdatePolicy
+      summary: Update an update policy
+      tags: [PackageUpdatePolicies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Updated policy
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/PackageUpdatePolicyDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      operationId: deletePackageUpdatePolicy
+      summary: Delete an update policy
+      tags: [PackageUpdatePolicies]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          $ref: "#/components/responses/NoContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Deployment Update Runs ────────────────────────────────────────────────
+  /deployments/{deployment_id}/update_runs:
+    get:
+      operationId: listDeploymentUpdateRuns
+      summary: List update runs for a deployment
+      tags: [DeploymentUpdates]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of update runs
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/UpdateRunListDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /deployments/{deployment_id}/update_runs/{id}:
+    get:
+      operationId: getDeploymentUpdateRun
+      summary: Get a single update run with hop detail
+      tags: [DeploymentUpdates]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Update run with hops
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/UpdateRunDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Deployment Pin ────────────────────────────────────────────────────────
+  /deployments/{deployment_id}/pin:
+    post:
+      operationId: pinDeployment
+      summary: Pin a deployment at its current version
+      tags: [DeploymentUpdates]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Pin created
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: unpinDeployment
+      summary: Remove a deployment pin
+      tags: [DeploymentUpdates]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          $ref: "#/components/responses/NoContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Deployment Package Update (preview + trigger) ─────────────────────────
+  /deployments/{deployment_id}/package_update:
+    get:
+      operationId: previewDeploymentPackageUpdate
+      summary: Preview effective policy and next eligible release
+      tags: [DeploymentUpdates]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Update preview
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: triggerDeploymentPackageUpdate
+      summary: Trigger an operator-initiated update now
+      tags: [DeploymentUpdates]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/PackageUpdateRequest"
+      responses:
+        "202":
+          description: Update started
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Concurrent update in progress
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  # ── Deployment Rollback ───────────────────────────────────────────────────────
+  /deployments/{deployment_id}/rollback:
+    post:
+      operationId: rollbackDeployment
+      summary: Roll back a deployment to a previous revision
+      tags: [Rollback]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/vnd.api+json:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: object
+                  properties:
+                    attributes:
+                      type: object
+                      properties:
+                        revision_id:
+                          type: string
+                          description: ID of the specific image revision to roll back to. Defaults to the previous healthy revision.
+                        reason:
+                          type: string
+                          description: Human-readable reason for the rollback.
+      responses:
+        "202":
+          description: Rollback accepted
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      type:
+                        type: string
+                        enum: [rollbacks]
+                      attributes:
+                        type: object
+                        properties:
+                          rollback_type:
+                            type: string
+                            enum: [canary, version, image]
+                          deployment_name:
+                            type: string
+                          image_tag:
+                            type: string
+                            nullable: true
+                            description: Image tag written to kustomization.yaml; present only for image rollbacks.
+                          commit_sha:
+                            type: string
+                            nullable: true
+                            description: GitOps commit SHA for the rollback change; present only for image and version rollbacks.
+                          rolled_back_at:
+                            type: string
+                            format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      operationId: releaseDeploymentImageHold
+      summary: Release an image-automation hold, resuming Flux automation
+      tags: [Rollback]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          $ref: "#/components/responses/NoContent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  # ── Deployment Image Revisions ────────────────────────────────────────────────
+  /deployments/{deployment_id}/image_revisions:
+    get:
+      operationId: listDeploymentImageRevisions
+      summary: List recorded image revisions for a deployment
+      tags: [Rollback]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: deployment_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page[number]
+          schema:
+            type: integer
+        - in: query
+          name: page[size]
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of image revisions
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        type:
+                          type: string
+                          enum: [image_revisions]
+                        attributes:
+                          type: object
+                          properties:
+                            image_reference:
+                              type: string
+                            image_digest:
+                              type: string
+                            source_commit:
+                              type: string
+                            started_serving_at:
+                              type: string
+                              format: date-time
+                            health_status:
+                              type: string
+                              enum: [unknown, healthy, failed, rolled_back]
+                  meta:
+                    type: object
+                  links:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"

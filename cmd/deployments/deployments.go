@@ -62,6 +62,7 @@ type Deployment struct {
 	NodeSelector            map[string]string `json:"node_selector,omitempty"`
 	Tolerations             []Toleration      `json:"tolerations,omitempty"`
 	TemplateExtraResources  map[string]string `json:"template_extra_resources,omitempty"`
+	TemplateValues          map[string]any    `json:"template_values,omitempty"`
 	GitopsSyncStatus        string            `json:"gitops_sync_status,omitempty"`
 	GitopsSourceRepo        string            `json:"gitops_source_repo,omitempty"`
 	GitopsBasePath          string            `json:"gitops_base_path,omitempty"`
@@ -109,6 +110,7 @@ type deploymentAttrs struct {
 	NodeSelector            map[string]string `json:"node_selector,omitempty"`
 	Tolerations             []Toleration      `json:"tolerations,omitempty"`
 	TemplateExtraResources  map[string]string `json:"template_extra_resources,omitempty"`
+	TemplateValues          map[string]any    `json:"template_values,omitempty"`
 	GitopsSyncStatus        string            `json:"gitops_sync_status,omitempty"`
 	GitopsSourceRepo        string            `json:"gitops_source_repo,omitempty"`
 	GitopsBasePath          string            `json:"gitops_base_path,omitempty"`
@@ -159,6 +161,7 @@ func deploymentFromResource(r httpclient.Resource[deploymentAttrs]) Deployment {
 		NodeSelector:            a.NodeSelector,
 		Tolerations:             a.Tolerations,
 		TemplateExtraResources:  a.TemplateExtraResources,
+		TemplateValues:          a.TemplateValues,
 		GitopsSyncStatus:        a.GitopsSyncStatus,
 		GitopsSourceRepo:        a.GitopsSourceRepo,
 		GitopsBasePath:          a.GitopsBasePath,
@@ -243,6 +246,47 @@ type rolloutAttrs struct {
 	CreatedAt    string `json:"created_at,omitempty"`
 }
 
+// ImageRevision is the API response shape for an image_revisions resource.
+type ImageRevision struct {
+	ID               string `json:"id"`
+	ImageReference   string `json:"image_reference,omitempty"`
+	ImageDigest      string `json:"image_digest,omitempty"`
+	SourceCommit     string `json:"source_commit,omitempty"`
+	StartedServingAt string `json:"started_serving_at,omitempty"`
+	HealthStatus     string `json:"health_status,omitempty"`
+}
+
+type imageRevisionAttrs struct {
+	ImageReference   string `json:"image_reference,omitempty"`
+	ImageDigest      string `json:"image_digest,omitempty"`
+	SourceCommit     string `json:"source_commit,omitempty"`
+	StartedServingAt string `json:"started_serving_at,omitempty"`
+	HealthStatus     string `json:"health_status,omitempty"`
+}
+
+// Rollback is the API response shape for a rollbacks resource.
+type Rollback struct {
+	ID             string `json:"id"`
+	RollbackType   string `json:"rollback_type,omitempty"`
+	DeploymentName string `json:"deployment_name,omitempty"`
+	ImageTag       string `json:"image_tag,omitempty"`
+	CommitSHA      string `json:"commit_sha,omitempty"`
+	RolledBackAt   string `json:"rolled_back_at,omitempty"`
+}
+
+type rollbackAttrs struct {
+	RollbackType   string `json:"rollback_type,omitempty"`
+	DeploymentName string `json:"deployment_name,omitempty"`
+	ImageTag       string `json:"image_tag,omitempty"`
+	CommitSHA      string `json:"commit_sha,omitempty"`
+	RolledBackAt   string `json:"rolled_back_at,omitempty"`
+}
+
+type rollbackReqAttrs struct {
+	RevisionID string `json:"revision_id,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
 // deploymentWriteAttrs matches DeploymentRequest.data.attributes in the spec.
 type deploymentWriteAttrs struct {
 	ProjectID               string            `json:"project_id,omitempty"`
@@ -276,6 +320,7 @@ type deploymentWriteAttrs struct {
 	NodeSelector            map[string]string `json:"node_selector,omitempty"`
 	Tolerations             []Toleration      `json:"tolerations,omitempty"`
 	TemplateExtraResources  map[string]string `json:"template_extra_resources,omitempty"`
+	TemplateValues          map[string]any    `json:"template_values,omitempty"`
 }
 
 var deploymentCols = []output.Column{
@@ -308,6 +353,8 @@ func NewCommand() *cobra.Command {
 		newUnpinCmd(),
 		newPackageUpdateCmd(),
 		newRolloutCmd(),
+		newRevisionsCmd(),
+		newDeploymentRollbackCmd(),
 	)
 	return cmd
 }
@@ -378,11 +425,19 @@ func parseTemplateExtraResources(s string) (map[string]string, error) {
 	return m, nil
 }
 
+func parseTemplateValues(s string) (map[string]any, error) {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		return nil, fmt.Errorf("--template-values: invalid JSON object: %w", err)
+	}
+	return m, nil
+}
+
 func newCreateCmd() *cobra.Command {
 	var name, namespace, projectID, clusterID, packageName, packageVersion, valuesOverride string
 	var environmentPreset, scalingMode, scalingProfile, placementPolicy string
 	var canaryInterval, cpuRequest, cpuLimit, memoryRequest, memoryLimit string
-	var nodeSelectorJSON, tolerationsJSON, templateExtraResourcesJSON string
+	var nodeSelectorJSON, tolerationsJSON, templateExtraResourcesJSON, templateValuesJSON string
 	var isAI, canaryEnabled bool
 	var minReplicas, maxReplicas, desiredReplicas int
 	var cpuTargetUtilization, memoryTargetUtilization int
@@ -503,6 +558,13 @@ func newCreateCmd() *cobra.Command {
 				}
 				attrs.TemplateExtraResources = ter
 			}
+			if cmd.Flags().Changed("template-values") {
+				tv, err := parseTemplateValues(templateValuesJSON)
+				if err != nil {
+					return err
+				}
+				attrs.TemplateValues = tv
+			}
 
 			body := jsonapi.Wrap(deploymentResourceType, attrs)
 			if gf.DryRun {
@@ -535,6 +597,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&nodeSelectorJSON, "node-selector", "", `Node selector as a JSON object (e.g. '{"kubernetes.io/os":"linux"}')`)
 	cmd.Flags().StringVar(&tolerationsJSON, "tolerations", "", `Tolerations as a JSON array (e.g. '[{"key":"foo","operator":"Equal","value":"bar","effect":"NoSchedule"}]')`)
 	cmd.Flags().StringVar(&templateExtraResourcesJSON, "template-extra-resources", "", "Extra template files as a JSON object mapping filename to YAML content")
+	cmd.Flags().StringVar(&templateValuesJSON, "template-values", "", `Template key-value inputs as a JSON object (e.g. '{"image_repository":"ghcr.io/foo/bar"}')`)
 	cmd.Flags().BoolVar(&isAI, "is-ai", false, "Mark as an AI workload (enables AI-specific defaults)")
 	cmd.Flags().BoolVar(&canaryEnabled, "canary-enabled", false, "Enable canary rollout via Flagger")
 	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Minimum replica count")
@@ -569,7 +632,7 @@ func newUpdateCmd() *cobra.Command {
 	var name, namespace, projectID, clusterID, packageName, packageVersion, valuesOverride string
 	var environmentPreset, scalingMode, scalingProfile, placementPolicy string
 	var canaryInterval, cpuRequest, cpuLimit, memoryRequest, memoryLimit string
-	var nodeSelectorJSON, tolerationsJSON, templateExtraResourcesJSON string
+	var nodeSelectorJSON, tolerationsJSON, templateExtraResourcesJSON, templateValuesJSON string
 	var isAI, canaryEnabled bool
 	var minReplicas, maxReplicas, desiredReplicas int
 	var cpuTargetUtilization, memoryTargetUtilization int
@@ -736,6 +799,14 @@ func newUpdateCmd() *cobra.Command {
 				attrs.TemplateExtraResources = ter
 				anyChanged = true
 			}
+			if cmd.Flags().Changed("template-values") {
+				tv, err := parseTemplateValues(templateValuesJSON)
+				if err != nil {
+					return err
+				}
+				attrs.TemplateValues = tv
+				anyChanged = true
+			}
 
 			if !anyChanged {
 				return clierror.New(clierror.CodeUsage, "at least one flag required for update", "")
@@ -777,6 +848,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&nodeSelectorJSON, "node-selector", "", `Node selector as a JSON object (e.g. '{"kubernetes.io/os":"linux"}')`)
 	cmd.Flags().StringVar(&tolerationsJSON, "tolerations", "", `Tolerations as a JSON array (e.g. '[{"key":"foo","operator":"Equal","value":"bar","effect":"NoSchedule"}]')`)
 	cmd.Flags().StringVar(&templateExtraResourcesJSON, "template-extra-resources", "", "Extra template files as a JSON object mapping filename to YAML content")
+	cmd.Flags().StringVar(&templateValuesJSON, "template-values", "", `Template key-value inputs as a JSON object (e.g. '{"image_repository":"ghcr.io/foo/bar"}')`)
 	cmd.Flags().BoolVar(&isAI, "is-ai", false, "Mark as an AI workload (enables AI-specific defaults)")
 	cmd.Flags().BoolVar(&canaryEnabled, "canary-enabled", false, "Enable canary rollout via Flagger")
 	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Minimum replica count")
@@ -1022,4 +1094,110 @@ func newRolloutCmd() *cobra.Command {
 			return enc.Encode(res.Attributes)
 		},
 	}
+}
+
+func newRevisionsCmd() *cobra.Command {
+	revisionCols := []output.Column{
+		{Header: "ID"},
+		{Header: "IMAGE_REFERENCE"},
+		{Header: "HEALTH_STATUS"},
+		{Header: "STARTED_SERVING_AT"},
+	}
+	return &cobra.Command{
+		Use:   "revisions <deployment_id>",
+		Short: "List image revisions for a deployment",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			renderer := ctxutil.RendererFrom(cmd.Context())
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/image_revisions"
+			resources, err := jsonapi.GetAllPages[imageRevisionAttrs](cmd.Context(), client, path)
+			if err != nil {
+				return err
+			}
+			var rows [][]string
+			var items []ImageRevision
+			for _, r := range resources {
+				ir := ImageRevision{
+					ID:               r.ID,
+					ImageReference:   r.Attributes.ImageReference,
+					ImageDigest:      r.Attributes.ImageDigest,
+					SourceCommit:     r.Attributes.SourceCommit,
+					StartedServingAt: r.Attributes.StartedServingAt,
+					HealthStatus:     r.Attributes.HealthStatus,
+				}
+				items = append(items, ir)
+				rows = append(rows, []string{ir.ID, ir.ImageReference, ir.HealthStatus, ir.StartedServingAt})
+			}
+			return renderer.Render(revisionCols, rows, httpclient.Envelope[[]ImageRevision]{Data: items})
+		},
+	}
+}
+
+func newRollbackReleaseCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "release <deployment_id>",
+		Short: "Release the image-automation hold, resuming Flux automation",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			if gf.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "DELETE /api/v1/deployments/%s/rollback\n", url.PathEscape(args[0]))
+				return err
+			}
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/rollback"
+			return client.Delete(cmd.Context(), path)
+		},
+	}
+}
+
+func newDeploymentRollbackCmd() *cobra.Command {
+	rollbackCols := []output.Column{
+		{Header: "ID"},
+		{Header: "ROLLBACK_TYPE"},
+		{Header: "DEPLOYMENT_NAME"},
+		{Header: "ROLLED_BACK_AT"},
+	}
+	var revisionID, reason string
+	cmd := &cobra.Command{
+		Use:   "rollback <deployment_id>",
+		Short: "Roll back a deployment to a previous healthy revision",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			renderer := ctxutil.RendererFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			if gf.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/deployments/%s/rollback\n", url.PathEscape(args[0]))
+				return err
+			}
+			attrs := rollbackReqAttrs{}
+			if cmd.Flags().Changed("revision") {
+				attrs.RevisionID = revisionID
+			}
+			if cmd.Flags().Changed("reason") {
+				attrs.Reason = reason
+			}
+			body := jsonapi.Wrap("rollbacks", attrs)
+			path := "/api/v1/deployments/" + url.PathEscape(args[0]) + "/rollback"
+			res, err := httpclient.PostJSONAPISingle[rollbackAttrs](cmd.Context(), client, path, body)
+			if err != nil {
+				return err
+			}
+			rb := Rollback{
+				ID:             res.ID,
+				RollbackType:   res.Attributes.RollbackType,
+				DeploymentName: res.Attributes.DeploymentName,
+				ImageTag:       res.Attributes.ImageTag,
+				CommitSHA:      res.Attributes.CommitSHA,
+				RolledBackAt:   res.Attributes.RolledBackAt,
+			}
+			return renderer.Render(rollbackCols, [][]string{{rb.ID, rb.RollbackType, rb.DeploymentName, rb.RolledBackAt}}, httpclient.Envelope[Rollback]{Data: rb})
+		},
+	}
+	cmd.Flags().StringVar(&revisionID, "revision", "", "ID of a specific revision to target (default: previous healthy)")
+	cmd.Flags().StringVar(&reason, "reason", "", "Human-readable reason for the rollback")
+	cmd.AddCommand(newRollbackReleaseCmd())
+	return cmd
 }

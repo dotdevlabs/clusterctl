@@ -1250,3 +1250,294 @@ func TestUpdate_NewScalarFields(t *testing.T) {
 		}
 	}
 }
+
+func TestRevisions(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":[{"type":"image_revisions","id":"rev1","attributes":{"image_reference":"ghcr.io/foo/bar:sha-abc","health_status":"healthy","started_serving_at":"2026-09-01T00:00:00Z"}}],"links":{}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"revisions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("revisions: %v", err)
+	}
+	if mt.calls[0].Method != http.MethodGet {
+		t.Errorf("expected GET, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/image_revisions") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+	if !strings.Contains(out.String(), "rev1") {
+		t.Errorf("expected rev1 in output, got: %s", out.String())
+	}
+}
+
+func TestRevisions_Pagination(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":[{"type":"image_revisions","id":"rev1","attributes":{"image_reference":"ghcr.io/foo/bar:sha-aaa","health_status":"healthy"}}],"links":{"next":"/api/v1/deployments/d1/image_revisions?page=2"}}`},
+		{200, `{"data":[{"type":"image_revisions","id":"rev2","attributes":{"image_reference":"ghcr.io/foo/bar:sha-bbb","health_status":"healthy"}}],"links":{}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"revisions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("revisions pagination: %v", err)
+	}
+	if len(mt.calls) != 2 {
+		t.Errorf("expected 2 HTTP calls (one per page), got %d", len(mt.calls))
+	}
+	if !strings.Contains(out.String(), "rev1") {
+		t.Errorf("expected rev1 in output, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "rev2") {
+		t.Errorf("expected rev2 in output, got: %s", out.String())
+	}
+}
+
+func TestRevisions_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"revisions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestRollback(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{202, `{"data":{"type":"rollbacks","id":"rb1","attributes":{"rollback_type":"image","deployment_name":"my-deploy","rolled_back_at":"2026-09-01T00:00:00Z"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollback"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if mt.calls[0].Method != http.MethodPost {
+		t.Errorf("expected POST, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/rollback") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+	if !strings.Contains(out.String(), "rb1") {
+		t.Errorf("expected rb1 in output, got: %s", out.String())
+	}
+}
+
+func TestRollback_WithRevision(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{202, `{"data":{"type":"rollbacks","id":"rb2","attributes":{"rollback_type":"image","deployment_name":"my-deploy","rolled_back_at":"2026-09-01T00:00:00Z"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollback"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--revision", "rev1", "--reason", "too many errors"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("rollback with revision: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be an object, got: %T", body["data"])
+	}
+	if data["type"] != "rollbacks" {
+		t.Errorf("expected data.type=rollbacks, got %v", data["type"])
+	}
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be an object, got: %T", data["attributes"])
+	}
+	if attrs["revision_id"] != "rev1" {
+		t.Errorf("expected revision_id=rev1, got %v", attrs["revision_id"])
+	}
+	if attrs["reason"] != "too many errors" {
+		t.Errorf("expected reason='too many errors', got %v", attrs["reason"])
+	}
+}
+
+func TestRollback_NoHealthyRevision_422(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"title":"Unprocessable Entity","detail":"no earlier healthy revision exists"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollback"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	err = sub.RunE(sub, []string{"d1"})
+	if err == nil {
+		t.Fatal("expected error for 422")
+	}
+	if !strings.Contains(err.Error(), "no earlier healthy revision exists") {
+		t.Errorf("expected error to contain 'no earlier healthy revision exists', got: %s", err.Error())
+	}
+}
+
+func TestRollback_DryRun(t *testing.T) {
+	mt := &mockTransport{}
+	ctx, out := buildCtx(t, mt, false)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollback"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("rollback dry-run: %v", err)
+	}
+	if len(mt.calls) > 0 {
+		t.Error("expected no HTTP calls for dry-run")
+	}
+	if !strings.Contains(out.String(), "POST /api/v1/deployments/d1/rollback") {
+		t.Errorf("expected dry-run output, got: %s", out.String())
+	}
+}
+
+func TestRollbackRelease(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{204, ``},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollback", "release"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("rollback release: %v", err)
+	}
+	if mt.calls[0].Method != http.MethodDelete {
+		t.Errorf("expected DELETE, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/deployments/d1/rollback") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+}
+
+func TestRollbackRelease_ErrorResponse(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"title":"no hold active"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollback", "release"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"d1"}); err == nil {
+		t.Fatal("expected error for 422")
+	}
+}
+
+func TestRollbackRelease_DryRun(t *testing.T) {
+	mt := &mockTransport{}
+	ctx, out := buildCtx(t, mt, false)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"rollback", "release"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"d1"}); err != nil {
+		t.Fatalf("rollback release dry-run: %v", err)
+	}
+	if len(mt.calls) > 0 {
+		t.Error("expected no HTTP calls for dry-run")
+	}
+	if !strings.Contains(out.String(), "DELETE /api/v1/deployments/d1/rollback") {
+		t.Errorf("expected dry-run output, got: %s", out.String())
+	}
+}
+
+func TestDeploymentCreate_TemplateValues(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"deployments","id":"d99","attributes":{"name":"tmpl-deploy","project_id":"p1","status":"pending"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := deployments.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{
+		"--project-id", "p1",
+		"--name", "tmpl-deploy",
+		"--namespace", "default",
+		"--package-name", "myapp",
+		"--package-version", "1.0.0",
+		"--template-values", `{"image_repository":"ghcr.io/foo/bar","port":8080}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create with template-values: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be an object, got: %T", body["data"])
+	}
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be an object, got: %T", data["attributes"])
+	}
+	tv, ok := attrs["template_values"]
+	if !ok {
+		t.Fatal("expected template_values in body attributes")
+	}
+	tvMap, ok := tv.(map[string]any)
+	if !ok {
+		t.Fatalf("expected template_values to be an object, got %T", tv)
+	}
+	if tvMap["image_repository"] != "ghcr.io/foo/bar" {
+		t.Errorf("expected image_repository=ghcr.io/foo/bar, got %v", tvMap["image_repository"])
+	}
+}
