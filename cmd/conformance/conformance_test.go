@@ -1,14 +1,22 @@
 package conformance_test
 
 import (
+	"context"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
+	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
+	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/clusterctl/cmd/auth"
 	"github.com/dotdevlabs/clusterctl/cmd/clusters"
@@ -20,6 +28,7 @@ import (
 	"github.com/dotdevlabs/clusterctl/cmd/secrets"
 	"github.com/dotdevlabs/clusterctl/cmd/status"
 	"github.com/dotdevlabs/clusterctl/cmd/templates"
+	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
 func buildRoot() *cobra.Command {
@@ -165,5 +174,78 @@ func TestOperationCoverage(t *testing.T) {
 func TestConnectorOpsExclusionIsExplicit(t *testing.T) {
 	if len(connectorOps) == 0 {
 		t.Fatal("connectorOps must be non-empty — connector endpoints are intentionally excluded")
+	}
+}
+
+// conformanceMockTransport is a minimal RoundTripper for conformance assertions.
+type conformanceMockTransport struct {
+	responses []conformanceMockResponse
+	calls     []*http.Request
+}
+
+type conformanceMockResponse struct {
+	status int
+	body   string
+}
+
+func (m *conformanceMockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	m.calls = append(m.calls, r)
+	if len(m.responses) == 0 {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("{}")), Header: make(http.Header)}, nil
+	}
+	resp := m.responses[0]
+	m.responses = m.responses[1:]
+	return &http.Response{StatusCode: resp.status, Body: io.NopCloser(strings.NewReader(resp.body)), Header: make(http.Header)}, nil
+}
+
+// TestSecretsDeleteConformance asserts that "secrets delete" sends exactly one DELETE
+// request and never calls the spec-absent GET /secrets/{id} endpoint.
+// The ClusterControl API publishes only index, create, and destroy for project secrets;
+// any GET call before DELETE would violate the published spec.
+func TestSecretsDeleteConformance(t *testing.T) {
+	mt := &conformanceMockTransport{responses: []conformanceMockResponse{
+		{204, ``},
+	}}
+
+	var out, errOut strings.Builder
+	client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: mt})
+	renderer := output.New(false, "", &out, &errOut)
+	ctx := context.Background()
+	ctx = ctxutil.WithClient(ctx, client)
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{})
+
+	root := buildRoot()
+	if err := root.PersistentFlags().Set("project-id", "p1"); err != nil {
+		// project-id is on the secrets subcommand, not root; set it below
+		_ = err
+	}
+
+	secretsCmd, _, err := root.Find([]string{"secrets"})
+	if err != nil || secretsCmd == nil {
+		t.Fatal("could not find 'secrets' command")
+	}
+	if err := secretsCmd.PersistentFlags().Set("project-id", "p1"); err != nil {
+		t.Fatalf("set --project-id: %v", err)
+	}
+
+	deleteCmd, _, err := root.Find([]string{"secrets", "delete"})
+	if err != nil || deleteCmd == nil {
+		t.Fatal("could not find 'secrets delete' command")
+	}
+	deleteCmd.SetContext(ctx)
+
+	if err := deleteCmd.RunE(deleteCmd, []string{"s1"}); err != nil {
+		t.Fatalf("secrets delete: %v", err)
+	}
+
+	if len(mt.calls) != 1 {
+		t.Errorf("expected exactly 1 HTTP call, got %d — a GET before DELETE would violate the published spec", len(mt.calls))
+	}
+	if len(mt.calls) > 0 && mt.calls[0].Method != http.MethodDelete {
+		t.Errorf("expected DELETE, got %s", mt.calls[0].Method)
+	}
+	if len(mt.calls) > 0 && !strings.Contains(mt.calls[0].URL.Path, "/secrets/s1") {
+		t.Errorf("expected /secrets/s1 in DELETE path, got: %s", mt.calls[0].URL.Path)
 	}
 }
