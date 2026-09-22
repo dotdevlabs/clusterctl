@@ -204,7 +204,6 @@ func TestCreate_JSONAPIContentType(t *testing.T) {
 // TestDelete_JSONAPIAcceptHeader verifies that delete sends the correct Accept header.
 func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"type":"project_secrets","id":"s1","links":{"self":"/api/v1/projects/p1/secrets/s1"},"attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL"}}}`},
 		{204, ``},
 	}}
 	ctx, _ := buildCtx(t, mt, false)
@@ -220,10 +219,10 @@ func TestDelete_JSONAPIAcceptHeader(t *testing.T) {
 	if err := sub.RunE(sub, []string{"s1"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if len(mt.calls) < 2 {
-		t.Fatal("expected 2 HTTP calls (GET + DELETE)")
+	if len(mt.calls) != 1 {
+		t.Fatalf("expected 1 HTTP call, got %d", len(mt.calls))
 	}
-	if got := mt.calls[1].Header.Get("Accept"); got != "application/vnd.api+json" {
+	if got := mt.calls[0].Header.Get("Accept"); got != "application/vnd.api+json" {
 		t.Errorf("Accept = %q, want application/vnd.api+json", got)
 	}
 }
@@ -304,7 +303,6 @@ func TestCreateDryRun(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"type":"project_secrets","id":"s1","links":{"self":"/api/v1/projects/p1/secrets/s1"},"attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL"}}}`},
 		{204, ``},
 	}}
 	ctx, _ := buildCtx(t, mt, false)
@@ -320,11 +318,14 @@ func TestDelete(t *testing.T) {
 	if err := sub.RunE(sub, []string{"s1"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if mt.calls[1].Method != http.MethodDelete {
-		t.Errorf("expected DELETE, got %s", mt.calls[1].Method)
+	if len(mt.calls) != 1 {
+		t.Fatalf("expected 1 HTTP call, got %d", len(mt.calls))
 	}
-	if !strings.Contains(mt.calls[1].URL.Path, "/secrets/s1") {
-		t.Errorf("expected /secrets/s1 in path, got: %s", mt.calls[1].URL.Path)
+	if mt.calls[0].Method != http.MethodDelete {
+		t.Errorf("expected DELETE, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/secrets/s1") {
+		t.Errorf("expected /secrets/s1 in path, got: %s", mt.calls[0].URL.Path)
 	}
 }
 
@@ -401,10 +402,10 @@ func TestListFollowsNextLinks(t *testing.T) {
 	}
 }
 
-// TestDeleteUsesSelfLink verifies that delete uses data.links.self for the DELETE URL.
-func TestDeleteUsesSelfLink(t *testing.T) {
+// TestDelete_SendsOnlySingleDeleteRequest verifies that delete sends exactly one DELETE
+// request and does not call the spec-absent GET endpoint first.
+func TestDelete_SendsOnlySingleDeleteRequest(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{
-		{200, `{"data":{"type":"project_secrets","id":"s1","links":{"self":"/api/v1/projects/p1/secrets/s1-canonical"},"attributes":{"kubernetes_secret_name":"app-secrets","key":"DATABASE_URL"}}}`},
 		{204, ``},
 	}}
 	ctx, _ := buildCtx(t, mt, false)
@@ -420,13 +421,13 @@ func TestDeleteUsesSelfLink(t *testing.T) {
 	if err := sub.RunE(sub, []string{"s1"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if len(mt.calls) != 2 {
-		t.Errorf("expected 2 HTTP calls, got %d", len(mt.calls))
+	if len(mt.calls) != 1 {
+		t.Errorf("expected exactly 1 HTTP call, got %d", len(mt.calls))
 	}
-	if mt.calls[1].Method != http.MethodDelete {
-		t.Errorf("expected second call to be DELETE, got %s", mt.calls[1].Method)
+	if mt.calls[0].Method != http.MethodDelete {
+		t.Errorf("expected DELETE, got %s", mt.calls[0].Method)
 	}
-	if mt.calls[1].URL.Path != "/api/v1/projects/p1/secrets/s1-canonical" {
-		t.Errorf("expected DELETE to use self link /api/v1/projects/p1/secrets/s1-canonical, got: %s", mt.calls[1].URL.Path)
+	if !strings.Contains(mt.calls[0].URL.Path, "/secrets/s1") {
+		t.Errorf("expected /secrets/s1 in path, got: %s", mt.calls[0].URL.Path)
 	}
 }

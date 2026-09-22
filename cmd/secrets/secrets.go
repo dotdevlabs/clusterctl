@@ -168,11 +168,7 @@ func newDeleteCmd(projectID *string) *cobra.Command {
 				_, err := cmd.OutOrStdout().Write([]byte("DELETE " + initialPath + "\n"))
 				return err
 			}
-			fetched, err := jsonapi.GetSingle[secretAttrs](cmd.Context(), client, initialPath)
-			if err != nil {
-				return err
-			}
-			return client.Delete(cmd.Context(), jsonapi.SelfPath(fetched.SelfLink, initialPath))
+			return client.Delete(cmd.Context(), initialPath)
 		},
 	}
 }
