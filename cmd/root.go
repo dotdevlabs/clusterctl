@@ -159,5 +159,14 @@ func aiWorkflows() []airef.Workflow {
 				"clusterctl templates get <template-id>",
 			},
 		},
+		{
+			Name:        "Create and update a deployment template",
+			Description: "Create a new deployment template with inputs and manifest files, then update its description or inputs.",
+			Steps: []string{
+				"clusterctl templates create --slug my-template --name \"My Template\" --inputs '[{\"key\":\"image\",\"type\":\"string\",\"required\":true}]'",
+				"clusterctl templates get <template-id>",
+				"clusterctl templates update <template-id> --description \"Updated description\"",
+			},
+		},
 	}
 }

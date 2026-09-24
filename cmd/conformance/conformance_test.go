@@ -101,6 +101,8 @@ var opCommandMap = map[string][]string{
 	"releaseDeploymentImageHold":     {"deployments", "rollback", "release"},
 	"listTemplates":                  {"templates", "list"},
 	"getTemplate":                    {"templates", "get"},
+	"createTemplate":                 {"templates", "create"},
+	"updateTemplate":                 {"templates", "update"},
 }
 
 // connectorOps are intentionally excluded from CLI coverage (in-cluster connector, not operators).
