@@ -150,12 +150,25 @@ clusterctl packages releases get <package_id> <release_id>
 
 ### templates
 
-List and inspect deployment templates available to your organization.
+Manage deployment templates available to your organization.
 
 ```bash
 clusterctl templates list
 clusterctl templates get <id>
+clusterctl templates create --slug <slug> --name <name> \
+  [--description <desc>] [--inputs <json-or-@file>] [--manifest-files <json-or-@file>]
+clusterctl templates update <id> \
+  [--description <desc>] [--clear-description] \
+  [--inputs <json-or-@file>] [--manifest-files <json-or-@file>]
 ```
+
+The `list` and `get` responses include `inputs` (typed input definitions) and `manifest_files` (filename → YAML content map) in machine-readable output.
+
+**`templates create`** — Creates a new deployment template. `--slug` and `--name` are required. `--inputs` accepts a JSON array or a `@file` path; `--manifest-files` accepts a JSON object mapping filenames to YAML content strings or a `@file` path. Invalid JSON is rejected before any network call. Use `--dry-run` to inspect the request body without sending it.
+
+**`templates update`** — Updates an existing template by ID. Only supplied flags are sent; unset fields are omitted and do not overwrite existing values. Use `--clear-description` to explicitly null out the description. A successful update prints re-render metadata (`rerendered_deployments`, `rerender_errors`); any re-render errors are shown as warnings in table mode.
+
+**File-based input** — Both `--inputs` and `--manifest-files` on `create` and `update` accept a `@`-prefixed path to a JSON file (e.g. `--inputs @inputs.json`). This avoids shell-escaping issues with multiline YAML content inside manifest files.
 
 ### package-update-policies
 
@@ -319,6 +332,7 @@ Common workflows included:
 - **Trigger a deployment rollout and inspect update runs** — package-update apply, update-runs list/get, rollout
 - **Roll back a deployment and release the hold** — deployments revisions, rollback, rollback release
 - **Browse available deployment templates** — templates list/get
+- **Create and update a deployment template** — templates create (with inputs/manifest-files), templates update (partial update, re-render metadata)
 
 ### version
 
