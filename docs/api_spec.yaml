@@ -678,10 +678,92 @@ components:
         name: { type: string }
         description: { type: string, nullable: true }
         resource_names: { type: array, items: { type: string } }
+        manifest_files:
+          type: object
+          additionalProperties: { type: string }
+          nullable: true
+          description: "Manifest files ({ filename => YAML content })"
         inputs:
           type: array
           items:
             $ref: "#/components/schemas/TemplateInput"
+
+    TemplateCreateAttributes:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        inputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateInput"
+        manifest_files:
+          type: object
+          additionalProperties: { type: string }
+          nullable: true
+
+    TemplateCreateRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [templates] }
+            attributes:
+              $ref: "#/components/schemas/TemplateCreateAttributes"
+
+    TemplateUpdateAttributes:
+      type: object
+      description: "Mutable attributes only. slug, name, and derived are not mutable."
+      properties:
+        description: { type: string, nullable: true }
+        inputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemplateInput"
+        manifest_files:
+          type: object
+          additionalProperties: { type: string }
+          nullable: true
+
+    TemplateUpdateRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [templates] }
+            attributes:
+              $ref: "#/components/schemas/TemplateUpdateAttributes"
+
+    TemplateUpdateMeta:
+      type: object
+      properties:
+        rerendered_deployments: { type: array, items: { type: string } }
+        rerender_errors: { type: array, items: { type: string } }
+
+    TemplateUpdateResource:
+      type: object
+      properties:
+        type: { type: string, enum: [templates] }
+        id: { type: string }
+        attributes:
+          $ref: "#/components/schemas/TemplateAttributes"
+        meta:
+          $ref: "#/components/schemas/TemplateUpdateMeta"
+
+    TemplateUpdateDocument:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/TemplateUpdateResource"
 
     TemplateResource:
       type: object
@@ -1951,6 +2033,27 @@ paths:
                 $ref: "#/components/schemas/TemplateListDocument"
         "401":
           $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createTemplate
+      summary: Create a deployment template
+      tags: [Templates]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/TemplateCreateRequest"
+      responses:
+        "201":
+          description: Template created
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/TemplateDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /templates/{id}:
     parameters:
@@ -1973,6 +2076,29 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateTemplate
+      summary: Update a deployment template
+      tags: [Templates]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/TemplateUpdateRequest"
+      responses:
+        "200":
+          description: Template updated
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/TemplateUpdateDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   # ── Connector Endpoints (application/json, per-cluster auth) ─────────────────
   /connector_heartbeat:

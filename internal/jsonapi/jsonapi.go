@@ -47,3 +47,42 @@ func PatchSingle[T any](ctx context.Context, c *httpclient.Client, path string, 
 	}
 	return httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type, Attributes: attrs}, nil
 }
+
+// ResourceWithMeta is a JSON:API resource that also carries a typed data.meta object.
+type ResourceWithMeta[T, M any] struct {
+	httpclient.Resource[T]
+	Meta M
+}
+
+// PatchSingleWithMeta sends a PATCH request and decodes both data.attributes and data.meta
+// from the response. Used for endpoints that return operational metadata alongside the updated
+// resource (e.g. PATCH /templates/{id} returns rerendered_deployments and rerender_errors).
+func PatchSingleWithMeta[T, M any](ctx context.Context, c *httpclient.Client, path string, body any) (ResourceWithMeta[T, M], error) {
+	var doc struct {
+		Data struct {
+			ID         string          `json:"id"`
+			Type       string          `json:"type"`
+			Attributes json.RawMessage `json:"attributes"`
+			Meta       json.RawMessage `json:"meta"`
+		} `json:"data"`
+	}
+	if err := c.Patch(ctx, path, body, &doc); err != nil {
+		return ResourceWithMeta[T, M]{}, err
+	}
+	var attrs T
+	if len(doc.Data.Attributes) > 0 {
+		if err := json.Unmarshal(doc.Data.Attributes, &attrs); err != nil {
+			return ResourceWithMeta[T, M]{}, fmt.Errorf("decoding attributes: %w", err)
+		}
+	}
+	var meta M
+	if len(doc.Data.Meta) > 0 {
+		if err := json.Unmarshal(doc.Data.Meta, &meta); err != nil {
+			return ResourceWithMeta[T, M]{}, fmt.Errorf("decoding meta: %w", err)
+		}
+	}
+	return ResourceWithMeta[T, M]{
+		Resource: httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type, Attributes: attrs},
+		Meta:     meta,
+	}, nil
+}
