@@ -133,13 +133,17 @@ clusterctl packages get <id>
 clusterctl packages create --name <name> [--description <desc>] [--source-type <helm|git>] \
   [--source-url <url>] [--source-branch <branch>] [--source-path <path>] \
   [--source-chart <chart>] [--source-tag-pattern <pattern>] \
-  [--tags <comma-list-or-json-array>]
+  [--tags <comma-list-or-json-array>] \
+  [--render-mode <slug>] [--clear-render-mode]
 clusterctl packages update <id> [--name <name>] [--description <desc>] \
   [--source-type <type>] [--source-url <url>] [--source-branch <branch>] \
   [--source-path <path>] [--source-chart <chart>] [--source-tag-pattern <pattern>] \
-  [--tags <comma-list-or-json-array>]
+  [--tags <comma-list-or-json-array>] \
+  [--render-mode <slug>] [--clear-render-mode]
 clusterctl packages delete <id>
 ```
+
+**`packages create` / `packages update`** — Use `--render-mode <slug>` to select an existing deployment template (use `clusterctl templates list` to find available slugs). Use `--clear-render-mode` to explicitly reset a package to source-native rendering (sends `null`). The two flags are mutually exclusive. Omitting both flags leaves any existing render mode unchanged on update, or sets source-native on create.
 
 #### packages releases
 

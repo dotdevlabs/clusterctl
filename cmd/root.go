@@ -160,6 +160,16 @@ func aiWorkflows() []airef.Workflow {
 			},
 		},
 		{
+			Name:        "Select a deployment template for a package",
+			Description: "Assign a data-backed deployment template to a package by its slug, or clear it back to source-native rendering.",
+			Steps: []string{
+				"clusterctl templates list",
+				"clusterctl packages update <package-id> --render-mode <template-slug>",
+				"clusterctl packages get <package-id>",
+				"clusterctl packages update <package-id> --clear-render-mode",
+			},
+		},
+		{
 			Name:        "Create and update a deployment template",
 			Description: "Create a new deployment template with inputs and manifest files, then update its description or inputs.",
 			Steps: []string{
