@@ -61,6 +61,7 @@ var opCommandMap = map[string][]string{
 	"deleteCluster":                  {"clusters", "delete"},
 	"createClusterHealthCheck":       {"clusters", "health-check"},
 	"getClusterProvisioning":         {"clusters", "provisioning"},
+	"createClusterProvisioning":      {"clusters", "retry-provisioning"},
 	"getClusterFluxBootstrap":        {"clusters", "flux-bootstrap-status"},
 	"createClusterFluxBootstrap":     {"clusters", "flux-bootstrap"},
 	"createClusterExposure":          {"clusters", "expose"},

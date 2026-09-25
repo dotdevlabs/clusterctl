@@ -110,6 +110,7 @@ clusterctl clusters health-check <id>
 clusterctl clusters flux-bootstrap <id>          # trigger Flux bootstrap (POST)
 clusterctl clusters flux-bootstrap-status <id>   # read Flux bootstrap status (GET)
 clusterctl clusters provisioning <id>            # read provisioning status for a virtual cluster
+clusterctl clusters retry-provisioning <id>      # retry provisioning for a failed virtual cluster (POST)
 clusterctl clusters expose <id>                  # expose a virtual cluster via host ingress
 ```
 
