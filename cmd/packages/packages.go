@@ -33,6 +33,7 @@ type Package struct {
 	SourceTagPat   string   `json:"source_tag_pattern,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
 	Versions       []string `json:"versions,omitempty"`
+	RenderMode     *string  `json:"render_mode,omitempty"`
 	CreatedAt      string   `json:"created_at,omitempty"`
 	UpdatedAt      string   `json:"updated_at,omitempty"`
 }
@@ -49,6 +50,7 @@ type packageAttrs struct {
 	SourceTagPat   string   `json:"source_tag_pattern,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
 	Versions       []string `json:"versions,omitempty"`
+	RenderMode     *string  `json:"render_mode,omitempty"`
 	CreatedAt      string   `json:"created_at,omitempty"`
 	UpdatedAt      string   `json:"updated_at,omitempty"`
 }
@@ -68,6 +70,7 @@ func packageFromResource(r httpclient.Resource[packageAttrs]) Package {
 		SourceTagPat:   a.SourceTagPat,
 		Tags:           a.Tags,
 		Versions:       a.Versions,
+		RenderMode:     a.RenderMode,
 		CreatedAt:      a.CreatedAt,
 		UpdatedAt:      a.UpdatedAt,
 	}
@@ -75,15 +78,16 @@ func packageFromResource(r httpclient.Resource[packageAttrs]) Package {
 
 // packageRequestAttrs matches PackageRequest.data.attributes in the spec.
 type packageRequestAttrs struct {
-	Name         string   `json:"name,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	SourceType   string   `json:"source_type,omitempty"`
-	SourceURL    string   `json:"source_url,omitempty"`
-	SourceBranch string   `json:"source_branch,omitempty"`
-	SourcePath   string   `json:"source_path,omitempty"`
-	SourceChart  string   `json:"source_chart,omitempty"`
-	SourceTagPat string   `json:"source_tag_pattern,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
+	Name         string          `json:"name,omitempty"`
+	Description  string          `json:"description,omitempty"`
+	SourceType   string          `json:"source_type,omitempty"`
+	SourceURL    string          `json:"source_url,omitempty"`
+	SourceBranch string          `json:"source_branch,omitempty"`
+	SourcePath   string          `json:"source_path,omitempty"`
+	SourceChart  string          `json:"source_chart,omitempty"`
+	SourceTagPat string          `json:"source_tag_pattern,omitempty"`
+	Tags         []string        `json:"tags,omitempty"`
+	RenderMode   json.RawMessage `json:"render_mode,omitempty"`
 }
 
 // PackageRelease is the API response shape for a package_releases resource.
@@ -244,6 +248,8 @@ func newGetCmd() *cobra.Command {
 
 func newCreateCmd() *cobra.Command {
 	var name, description, sourceType, sourceURL, sourceBranch, sourcePath, sourceChart, sourceTagPat, tagsStr string
+	var renderMode string
+	var clearRenderMode bool
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new package",
@@ -251,6 +257,10 @@ func newCreateCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+
+			if clearRenderMode && cmd.Flags().Changed("render-mode") {
+				return clierror.New(clierror.CodeUsage, "--render-mode and --clear-render-mode are mutually exclusive", "")
+			}
 
 			attrs := packageRequestAttrs{
 				Name:         name,
@@ -268,6 +278,12 @@ func newCreateCmd() *cobra.Command {
 					return err
 				}
 				attrs.Tags = tags
+			}
+			if clearRenderMode {
+				attrs.RenderMode = json.RawMessage("null")
+			} else if cmd.Flags().Changed("render-mode") {
+				b, _ := json.Marshal(renderMode)
+				attrs.RenderMode = b
 			}
 			body := jsonapi.Wrap(packageResourceType, attrs)
 			if gf.DryRun {
@@ -290,6 +306,8 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sourceChart, "source-chart", "", "Source chart name")
 	cmd.Flags().StringVar(&sourceTagPat, "source-tag-pattern", "", "Source tag pattern")
 	cmd.Flags().StringVar(&tagsStr, "tags", "", `Tags as comma-separated list or JSON array (e.g. "a,b" or '["a","b"]')`)
+	cmd.Flags().StringVar(&renderMode, "render-mode", "", "Template slug for render mode")
+	cmd.Flags().BoolVar(&clearRenderMode, "clear-render-mode", false, "Clear render mode to source-native (sends null)")
 	if err := cmd.MarkFlagRequired("name"); err != nil {
 		panic(err)
 	}
@@ -298,6 +316,8 @@ func newCreateCmd() *cobra.Command {
 
 func newUpdateCmd() *cobra.Command {
 	var name, description, sourceType, sourceURL, sourceBranch, sourcePath, sourceChart, sourceTagPat, tagsStr string
+	var renderMode string
+	var clearRenderMode bool
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a package",
@@ -306,6 +326,10 @@ func newUpdateCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+
+			if clearRenderMode && cmd.Flags().Changed("render-mode") {
+				return clierror.New(clierror.CodeUsage, "--render-mode and --clear-render-mode are mutually exclusive", "")
+			}
 
 			attrs := packageRequestAttrs{}
 			anyChanged := false
@@ -349,6 +373,14 @@ func newUpdateCmd() *cobra.Command {
 				attrs.Tags = tags
 				anyChanged = true
 			}
+			if clearRenderMode {
+				attrs.RenderMode = json.RawMessage("null")
+				anyChanged = true
+			} else if cmd.Flags().Changed("render-mode") {
+				b, _ := json.Marshal(renderMode)
+				attrs.RenderMode = b
+				anyChanged = true
+			}
 			if !anyChanged {
 				return clierror.New(clierror.CodeUsage, "at least one flag required for update", "")
 			}
@@ -379,6 +411,8 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sourceChart, "source-chart", "", "Source chart name")
 	cmd.Flags().StringVar(&sourceTagPat, "source-tag-pattern", "", "Source tag pattern")
 	cmd.Flags().StringVar(&tagsStr, "tags", "", `Tags as comma-separated list or JSON array (e.g. "a,b" or '["a","b"]')`)
+	cmd.Flags().StringVar(&renderMode, "render-mode", "", "Template slug for render mode")
+	cmd.Flags().BoolVar(&clearRenderMode, "clear-render-mode", false, "Clear render mode to source-native (sends null)")
 	return cmd
 }
 

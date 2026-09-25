@@ -2,6 +2,7 @@ package conformance_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -179,6 +180,19 @@ func TestConnectorOpsExclusionIsExplicit(t *testing.T) {
 	}
 }
 
+func extractAttrs(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be object, got %T", body["data"])
+	}
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be object, got %T", data["attributes"])
+	}
+	return attrs
+}
+
 // conformanceMockTransport is a minimal RoundTripper for conformance assertions.
 type conformanceMockTransport struct {
 	responses []conformanceMockResponse
@@ -198,6 +212,138 @@ func (m *conformanceMockTransport) RoundTrip(r *http.Request) (*http.Response, e
 	resp := m.responses[0]
 	m.responses = m.responses[1:]
 	return &http.Response{StatusCode: resp.status, Body: io.NopCloser(strings.NewReader(resp.body)), Header: make(http.Header)}, nil
+}
+
+// TestPackageRenderModeConformance pins the HTTP wire format for render_mode on package create.
+func TestPackageRenderModeConformance(t *testing.T) {
+	packageResp := `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"mypkg","source_type":"helm"}}}`
+
+	t.Run("set render_mode slug", func(t *testing.T) {
+		mt := &conformanceMockTransport{responses: []conformanceMockResponse{
+			{201, packageResp},
+		}}
+		var out, errOut strings.Builder
+		client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: mt})
+		renderer := output.New(false, "", &out, &errOut)
+		ctx := context.Background()
+		ctx = ctxutil.WithClient(ctx, client)
+		ctx = ctxutil.WithRenderer(ctx, renderer)
+		ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{})
+
+		root := buildRoot()
+		sub, _, err := root.Find([]string{"packages", "create"})
+		if err != nil || sub == nil {
+			t.Fatal("could not find 'packages create' command")
+		}
+		sub.SetContext(ctx)
+		if err := sub.ParseFlags([]string{"--name", "mypkg", "--render-mode", "slug"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := sub.RunE(sub, []string{}); err != nil {
+			t.Fatalf("packages create: %v", err)
+		}
+		if len(mt.calls) != 1 {
+			t.Fatalf("expected 1 HTTP call, got %d", len(mt.calls))
+		}
+		raw, err := io.ReadAll(mt.calls[0].Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("unmarshal body: %v", err)
+		}
+		attrs := extractAttrs(t, body)
+		if attrs["render_mode"] != "slug" {
+			t.Errorf("expected render_mode=slug, got %v", attrs["render_mode"])
+		}
+	})
+
+	t.Run("clear render_mode sends null", func(t *testing.T) {
+		mt := &conformanceMockTransport{responses: []conformanceMockResponse{
+			{201, packageResp},
+		}}
+		var out, errOut strings.Builder
+		client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: mt})
+		renderer := output.New(false, "", &out, &errOut)
+		ctx := context.Background()
+		ctx = ctxutil.WithClient(ctx, client)
+		ctx = ctxutil.WithRenderer(ctx, renderer)
+		ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{})
+
+		root := buildRoot()
+		sub, _, err := root.Find([]string{"packages", "create"})
+		if err != nil || sub == nil {
+			t.Fatal("could not find 'packages create' command")
+		}
+		sub.SetContext(ctx)
+		if err := sub.ParseFlags([]string{"--name", "mypkg", "--clear-render-mode"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := sub.RunE(sub, []string{}); err != nil {
+			t.Fatalf("packages create: %v", err)
+		}
+		if len(mt.calls) != 1 {
+			t.Fatalf("expected 1 HTTP call, got %d", len(mt.calls))
+		}
+		raw, err := io.ReadAll(mt.calls[0].Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("unmarshal body: %v", err)
+		}
+		attrs := extractAttrs(t, body)
+		val, present := attrs["render_mode"]
+		if !present {
+			t.Error("expected render_mode key present (null), but key was absent")
+		}
+		if val != nil {
+			t.Errorf("expected render_mode=null, got %v", val)
+		}
+	})
+
+	t.Run("no render_mode flag omits key", func(t *testing.T) {
+		mt := &conformanceMockTransport{responses: []conformanceMockResponse{
+			{201, packageResp},
+		}}
+		var out, errOut strings.Builder
+		client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: mt})
+		renderer := output.New(false, "", &out, &errOut)
+		ctx := context.Background()
+		ctx = ctxutil.WithClient(ctx, client)
+		ctx = ctxutil.WithRenderer(ctx, renderer)
+		ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{})
+
+		root := buildRoot()
+		sub, _, err := root.Find([]string{"packages", "create"})
+		if err != nil || sub == nil {
+			t.Fatal("could not find 'packages create' command")
+		}
+		sub.SetContext(ctx)
+		if err := sub.ParseFlags([]string{"--name", "mypkg"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := sub.RunE(sub, []string{}); err != nil {
+			t.Fatalf("packages create: %v", err)
+		}
+		if len(mt.calls) != 1 {
+			t.Fatalf("expected 1 HTTP call, got %d", len(mt.calls))
+		}
+		raw, err := io.ReadAll(mt.calls[0].Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("unmarshal body: %v", err)
+		}
+		attrs := extractAttrs(t, body)
+		if _, present := attrs["render_mode"]; present {
+			t.Errorf("expected render_mode key absent, but it was present: %v", attrs["render_mode"])
+		}
+	})
 }
 
 // TestSecretsDeleteConformance asserts that "secrets delete" sends exactly one DELETE
