@@ -1503,6 +1503,23 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createClusterProvisioning
+      summary: Retry provisioning for a failed virtual cluster
+      tags: [Clusters]
+      responses:
+        "202":
+          description: Provisioning retry enqueued
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/ProvisioningDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
 
   /clusters/{cluster_id}/flux_bootstrap:
     parameters:

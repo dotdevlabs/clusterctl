@@ -716,6 +716,152 @@ func TestExpose_ErrorResponse(t *testing.T) {
 	}
 }
 
+func TestRetryProvisioning(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{202, `{"data":{"type":"provisionings","id":"c1","attributes":{"name":"prod","status":"provisioning","provisioning_message":"retrying","provisioning_started_at":"2024-01-01T00:00:00Z"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"retry-provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("retry-provisioning: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if mt.calls[0].Method != http.MethodPost {
+		t.Errorf("expected POST, got %s", mt.calls[0].Method)
+	}
+	if !strings.Contains(mt.calls[0].URL.Path, "/clusters/c1/provisioning") {
+		t.Errorf("unexpected path: %s", mt.calls[0].URL.Path)
+	}
+	if !strings.Contains(out.String(), "provisioning") {
+		t.Errorf("expected status in output, got: %s", out.String())
+	}
+}
+
+func TestRetryProvisioning_NoBody(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{202, `{"data":{"type":"provisionings","id":"c1","attributes":{"status":"provisioning"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"retry-provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("retry-provisioning: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if mt.calls[0].Body != nil && mt.calls[0].Body != http.NoBody {
+		raw, _ := io.ReadAll(mt.calls[0].Body)
+		if len(raw) != 0 {
+			t.Errorf("expected empty request body, got: %s", raw)
+		}
+	}
+}
+
+func TestRetryProvisioning_DryRun(t *testing.T) {
+	mt := &mockTransport{}
+	ctx, out := buildCtx(t, mt, false)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"retry-provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(out)
+	if err := sub.RunE(sub, []string{"c1"}); err != nil {
+		t.Fatalf("retry-provisioning dry-run: %v", err)
+	}
+	if len(mt.calls) != 0 {
+		t.Error("expected no HTTP calls in dry-run mode")
+	}
+	if !strings.Contains(out.String(), "POST /api/v1/clusters/c1/provisioning") {
+		t.Errorf("expected dry-run output, got: %s", out.String())
+	}
+}
+
+func TestRetryProvisioning_401(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{401, `{"errors":[{"title":"unauthorized"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"retry-provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"c1"}); err == nil {
+		t.Fatal("expected error for 401")
+	}
+}
+
+func TestRetryProvisioning_404(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"title":"not found"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"retry-provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestRetryProvisioning_422(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"title":"cluster not in failed state"}]}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"retry-provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"c1"}); err == nil {
+		t.Fatal("expected error for 422")
+	}
+}
+
+func TestRetryProvisioning_IDEscape(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{202, `{"data":{"type":"provisionings","id":"c/1","attributes":{"status":"provisioning"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := clusters.NewCommand()
+	sub, _, err := parent.Find([]string{"retry-provisioning"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"c/1"}); err != nil {
+		t.Fatalf("retry-provisioning escape: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	if !strings.Contains(mt.calls[0].URL.EscapedPath(), "/clusters/c%2F1/provisioning") {
+		t.Errorf("expected escaped path /clusters/c%%2F1/provisioning, got: %s", mt.calls[0].URL.EscapedPath())
+	}
+}
+
 // TestFluxBootstrapUsesSelfLink verifies flux-bootstrap appends to data.links.self.
 func TestFluxBootstrapUsesSelfLink(t *testing.T) {
 	mt := &mockTransport{responses: []mockResponse{

@@ -187,6 +187,7 @@ func NewCommand() *cobra.Command {
 		newFluxBootstrapCmd(),
 		newFluxBootstrapStatusCmd(),
 		newProvisioningCmd(),
+		newRetryProvisioningCmd(),
 		newExposeCmd(),
 	)
 	return cmd
@@ -465,6 +466,30 @@ func newProvisioningCmd() *cobra.Command {
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(res.Resource.Attributes)
+		},
+	}
+}
+
+func newRetryProvisioningCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "retry-provisioning <id>",
+		Short: "Retry provisioning for a failed virtual cluster",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := ctxutil.ClientFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			if gf.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "POST /api/v1/clusters/%s/provisioning\n", url.PathEscape(args[0]))
+				return err
+			}
+			path := "/api/v1/clusters/" + url.PathEscape(args[0]) + "/provisioning"
+			res, err := httpclient.PostJSONAPISingle[provisioningAttrs](cmd.Context(), client, path, nil)
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(res.Attributes)
 		},
 	}
 }
