@@ -37,6 +37,19 @@ func (m *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: resp.status, Body: io.NopCloser(strings.NewReader(resp.body)), Header: make(http.Header)}, nil
 }
 
+func extractAttrs(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data to be object, got %T", body["data"])
+	}
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes to be object, got %T", data["attributes"])
+	}
+	return attrs
+}
+
 func buildCtx(t *testing.T, transport http.RoundTripper, jsonMode bool) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	var out, errOut bytes.Buffer
@@ -453,6 +466,284 @@ func TestReleasesGet_ErrorResponse(t *testing.T) {
 	sub.SetContext(ctx)
 	if err := sub.RunE(sub, []string{"missing", "r1"}); err == nil {
 		t.Fatal("expected error for 404")
+	}
+}
+
+// TestCreate_WithRenderMode verifies that --render-mode sends the slug as a JSON string.
+func TestCreate_WithRenderMode(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"packages","id":"pkg2","attributes":{"name":"newpkg","source_type":"helm","render_mode":"my-template"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "newpkg", "--render-mode", "my-template"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	attrs := extractAttrs(t, body)
+	if attrs["render_mode"] != "my-template" {
+		t.Errorf("expected render_mode=my-template, got %v", attrs["render_mode"])
+	}
+}
+
+// TestCreate_ClearRenderMode verifies that --clear-render-mode sends JSON null.
+func TestCreate_ClearRenderMode(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"packages","id":"pkg2","attributes":{"name":"newpkg","source_type":"helm"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "newpkg", "--clear-render-mode"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	attrs := extractAttrs(t, body)
+	val, present := attrs["render_mode"]
+	if !present {
+		t.Error("expected render_mode key to be present (null), but key was absent")
+	}
+	if val != nil {
+		t.Errorf("expected render_mode=null, got %v", val)
+	}
+}
+
+// TestCreate_OmitsRenderModeWhenAbsent verifies that omitting render-mode flags means no key in body.
+func TestCreate_OmitsRenderModeWhenAbsent(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{201, `{"data":{"type":"packages","id":"pkg2","attributes":{"name":"newpkg","source_type":"helm"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "newpkg", "--source-type", "helm"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	attrs := extractAttrs(t, body)
+	if _, present := attrs["render_mode"]; present {
+		t.Errorf("expected render_mode key to be absent, but it was present: %v", attrs["render_mode"])
+	}
+}
+
+// TestUpdate_WithRenderMode verifies that --render-mode on update sends the slug.
+func TestUpdate_WithRenderMode(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","links":{"self":"/api/v1/packages/pkg1"},"attributes":{"name":"mypackage","source_type":"helm"}}}`},
+		{200, `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"mypackage","source_type":"helm","render_mode":"new-template"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--render-mode", "new-template"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + PATCH)")
+	}
+	raw, err := io.ReadAll(mt.calls[1].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	attrs := extractAttrs(t, body)
+	if attrs["render_mode"] != "new-template" {
+		t.Errorf("expected render_mode=new-template, got %v", attrs["render_mode"])
+	}
+}
+
+// TestUpdate_ClearRenderMode verifies that --clear-render-mode on update sends JSON null.
+func TestUpdate_ClearRenderMode(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","links":{"self":"/api/v1/packages/pkg1"},"attributes":{"name":"mypackage","source_type":"helm","render_mode":"old-template"}}}`},
+		{200, `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"mypackage","source_type":"helm"}}}`},
+	}}
+	ctx, _ := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--clear-render-mode"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) < 2 {
+		t.Fatal("expected 2 HTTP calls (GET + PATCH)")
+	}
+	raw, err := io.ReadAll(mt.calls[1].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	attrs := extractAttrs(t, body)
+	val, present := attrs["render_mode"]
+	if !present {
+		t.Error("expected render_mode key to be present (null), but key was absent")
+	}
+	if val != nil {
+		t.Errorf("expected render_mode=null, got %v", val)
+	}
+}
+
+// TestCreate_RenderModeMutualExclusion verifies that using both flags returns an error and no HTTP call.
+func TestCreate_RenderModeMutualExclusion(t *testing.T) {
+	mt := &mockTransport{}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--name", "newpkg", "--render-mode", "some-slug", "--clear-render-mode"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err == nil {
+		t.Fatal("expected error when both --render-mode and --clear-render-mode are set")
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls, got %d", len(mt.calls))
+	}
+}
+
+// TestUpdate_RenderModeMutualExclusion verifies that using both flags on update returns an error and no HTTP call.
+func TestUpdate_RenderModeMutualExclusion(t *testing.T) {
+	mt := &mockTransport{}
+	ctx, _ := buildCtx(t, mt, false)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.ParseFlags([]string{"--render-mode", "some-slug", "--clear-render-mode"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"pkg1"}); err == nil {
+		t.Fatal("expected error when both --render-mode and --clear-render-mode are set")
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls, got %d", len(mt.calls))
+	}
+}
+
+// TestGet_RenderModeInJSONOutput verifies that render_mode from the API response appears in JSON output.
+func TestGet_RenderModeInJSONOutput(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{200, `{"data":{"type":"packages","id":"pkg1","attributes":{"name":"mypackage","source_type":"helm","render_mode":"my-slug"}}}`},
+	}}
+	ctx, out := buildCtx(t, mt, true)
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"get"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	if err := sub.RunE(sub, []string{"pkg1"}); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !strings.Contains(out.String(), "my-slug") {
+		t.Errorf("expected render_mode my-slug in JSON output, got: %s", out.String())
+	}
+}
+
+// TestCreate_DryRun_WithRenderMode verifies dry-run prints the body with render_mode and makes no HTTP call.
+func TestCreate_DryRun_WithRenderMode(t *testing.T) {
+	mt := &mockTransport{}
+	var out, errOut bytes.Buffer
+	client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: mt})
+	renderer := output.New(true, "", &out, &errOut)
+	ctx := context.Background()
+	ctx = ctxutil.WithClient(ctx, client)
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	parent := packages.NewCommand()
+	sub, _, err := parent.Find([]string{"create"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(&out)
+	if err := sub.ParseFlags([]string{"--name", "newpkg", "--render-mode", "slug"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{}); err != nil {
+		t.Fatalf("create dry-run: %v", err)
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls on dry-run, got %d", len(mt.calls))
+	}
+	if !strings.Contains(out.String(), "render_mode") {
+		t.Errorf("expected render_mode in dry-run output, got: %s", out.String())
 	}
 }
 
