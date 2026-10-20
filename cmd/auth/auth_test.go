@@ -101,3 +101,16 @@ func TestWhoami_ErrorResponse(t *testing.T) {
 		t.Fatal("expected error for 401 response")
 	}
 }
+
+func TestWhoami_MissingContext(t *testing.T) {
+	parent := auth.NewCommand()
+	sub, _, err := parent.Find([]string{"whoami"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(context.Background())
+	err = sub.RunE(sub, []string{})
+	if err == nil {
+		t.Fatal("expected error when no client in context, got nil")
+	}
+}

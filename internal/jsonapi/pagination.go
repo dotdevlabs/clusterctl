@@ -2,6 +2,7 @@ package jsonapi
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
@@ -9,6 +10,9 @@ import (
 
 // GetAllPages fetches every page of a JSON:API collection by following links.next.
 func GetAllPages[T any](ctx context.Context, c *httpclient.Client, initialPath string) ([]httpclient.Resource[T], error) {
+	if c == nil {
+		return nil, fmt.Errorf("no active session: run 'auth login' first")
+	}
 	var all []httpclient.Resource[T]
 	path := initialPath
 	for path != "" {

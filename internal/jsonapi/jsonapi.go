@@ -29,6 +29,9 @@ func Wrap[T any](resourceType string, attrs T) Request[T] {
 // The jsonapi.Transport middleware (injected via the HTTP client) upgrades Content-Type to
 // application/vnd.api+json on the wire; this function handles response decoding.
 func PatchSingle[T any](ctx context.Context, c *httpclient.Client, path string, body any) (httpclient.Resource[T], error) {
+	if c == nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("no active session: run 'auth login' first")
+	}
 	var doc struct {
 		Data struct {
 			ID         string          `json:"id"`
@@ -58,6 +61,9 @@ type ResourceWithMeta[T, M any] struct {
 // from the response. Used for endpoints that return operational metadata alongside the updated
 // resource (e.g. PATCH /templates/{id} returns rerendered_deployments and rerender_errors).
 func PatchSingleWithMeta[T, M any](ctx context.Context, c *httpclient.Client, path string, body any) (ResourceWithMeta[T, M], error) {
+	if c == nil {
+		return ResourceWithMeta[T, M]{}, fmt.Errorf("no active session: run 'auth login' first")
+	}
 	var doc struct {
 		Data struct {
 			ID         string          `json:"id"`
