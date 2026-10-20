@@ -1,11 +1,12 @@
 package auth
 
 import (
-	"encoding/json"
-
 	"github.com/spf13/cobra"
 
+	"github.com/dotdevlabs/ctlkit/pkg/clierror"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
+	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
+	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
@@ -25,6 +26,16 @@ type authContextAttrs struct {
 		Name      string `json:"name"`
 		ExpiresAt string `json:"expires_at,omitempty"`
 	} `json:"token"`
+}
+
+var whoamiCols = []output.Column{
+	{Header: "ORGANIZATION"},
+	{Header: "OWNER"},
+	{Header: "TOKEN"},
+}
+
+func whoamiRow(a authContextAttrs) []string {
+	return []string{a.Organization.Name, a.Owner.EmailAddress, a.Token.Name}
 }
 
 // NewCommand returns the "auth" cobra.Command with all subcommands attached.
@@ -50,13 +61,16 @@ func newWhoamiCmd() *cobra.Command {
 		Short: "Show the current authentication context",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := ctxutil.ClientFrom(cmd.Context())
+			if client == nil {
+				return clierror.New(clierror.CodeUsage, "no active session", "run 'auth login' first")
+			}
+			renderer := ctxutil.RendererFrom(cmd.Context())
 			res, err := jsonapi.GetSingle[authContextAttrs](cmd.Context(), client, "/api/v1/auth")
 			if err != nil {
 				return err
 			}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(res.Resource.Attributes)
+			a := res.Resource.Attributes
+			return renderer.Render(whoamiCols, [][]string{whoamiRow(a)}, httpclient.Envelope[authContextAttrs]{Data: a})
 		},
 	}
 }

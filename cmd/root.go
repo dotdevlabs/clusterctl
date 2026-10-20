@@ -8,8 +8,10 @@ import (
 
 	"github.com/dotdevlabs/ctlkit/pkg/airef"
 	"github.com/dotdevlabs/ctlkit/pkg/clierror"
+	"github.com/dotdevlabs/ctlkit/pkg/config"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
+	"github.com/dotdevlabs/ctlkit/pkg/output"
 	"github.com/dotdevlabs/ctlkit/pkg/root"
 	"github.com/dotdevlabs/ctlkit/pkg/version"
 
@@ -52,8 +54,36 @@ func Execute() {
 	// Extend ctlkit's built-in "auth" command with the ClusterControl-specific
 	// "whoami" subcommand (GET /auth). ctlkit registers its "auth" command before
 	// product-specific commands, so Find returns it here.
+	// whoami gets its own PersistentPreRunE because ctlkit's SkipContextResolution
+	// returns true for any command under the "auth" parent, which would leave the
+	// HTTP client nil. This PreRunE mirrors the setup in the root PreRunE below.
+	whoamiCmd := auth.NewWhoamiCmd()
+	whoamiCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		ctxName, _ := cmd.Root().PersistentFlags().GetString("context")
+		jsonFlag, _ := cmd.Root().PersistentFlags().GetBool("json")
+		formatFlag, _ := cmd.Root().PersistentFlags().GetString("format")
+
+		productCfg, err := config.Load("clusterctl")
+		if err != nil {
+			return err
+		}
+		activeCtx, _, err := config.Resolve("clusterctl", productCfg, ctxName)
+		if err != nil {
+			return err
+		}
+		client := httpclient.NewWithTransport(
+			activeCtx.BaseURL,
+			activeCtx.Token,
+			&jsonapi.Transport{Wrapped: http.DefaultTransport},
+		)
+		renderer := output.New(jsonFlag, formatFlag, os.Stdout, os.Stderr)
+		cmdCtx := ctxutil.WithClient(cmd.Context(), client)
+		cmdCtx = ctxutil.WithRenderer(cmdCtx, renderer)
+		cmd.SetContext(cmdCtx)
+		return nil
+	}
 	if authCmd, _, _ := r.Find([]string{"auth"}); authCmd != nil && authCmd != r {
-		authCmd.AddCommand(auth.NewWhoamiCmd())
+		authCmd.AddCommand(whoamiCmd)
 	}
 
 	// Chain our JSON:API transport middleware after ctlkit's PersistentPreRunE.

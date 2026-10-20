@@ -31,6 +31,9 @@ type selfSingleDoc struct {
 // Uses c.Get which goes through jsonapi.Transport, so Accept is set to
 // application/vnd.api+json on the wire.
 func GetSingle[T any](ctx context.Context, c *httpclient.Client, path string) (ResourceWithSelf[T], error) {
+	if c == nil {
+		return ResourceWithSelf[T]{}, fmt.Errorf("no active session: run 'auth login' first")
+	}
 	var doc selfSingleDoc
 	if err := c.Get(ctx, path, &doc); err != nil {
 		return ResourceWithSelf[T]{}, err
