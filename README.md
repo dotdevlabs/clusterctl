@@ -82,7 +82,8 @@ clusterctl status
 
 ```bash
 clusterctl auth login --name <ctx> --url <base-url> --token <token>  # store a named context
-clusterctl auth whoami                                                # verify token and return identity (organization, owner, token)
+clusterctl auth whoami                                                # print authenticated identity (table: ORGANIZATION, OWNER, TOKEN)
+clusterctl auth whoami --json                                         # machine-stable JSON envelope
 ```
 
 ### registrations
