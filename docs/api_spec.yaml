@@ -412,6 +412,22 @@ components:
                 key: { type: string }
                 value: { type: string }
 
+    SecretUpdateRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [type, attributes]
+          properties:
+            type: { type: string, enum: [project_secrets] }
+            attributes:
+              type: object
+              properties:
+                kubernetes_secret_name: { type: string }
+                key: { type: string }
+                value: { type: string }
+
     # ── Secret Materializations ───────────────────────────────────────────────
     SecretMaterializationAttributes:
       type: object
@@ -561,6 +577,28 @@ components:
           description: "Extra manifest files to inject into the template render output ({ filename => content })"
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        # flux observation fields (always present; null until first observation)
+        flux_condition_reason:
+          type: string
+          nullable: true
+          description: "Reason from the Flux Ready condition (e.g. ReconciliationSucceeded, HealthCheckFailed). Present on all responses."
+        flux_condition_message:
+          type: string
+          nullable: true
+          description: "Human-readable message from the Flux Ready condition. Present on all responses."
+        flux_last_applied_revision:
+          type: string
+          nullable: true
+          description: "Last revision successfully applied by Flux (e.g. main@sha1:abc1234). Present on all responses."
+        flux_last_attempted_revision:
+          type: string
+          nullable: true
+          description: "Last revision Flux attempted to apply (may differ from applied when reconciliation is failing). Present on all responses."
+        flux_observed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: "Timestamp of the most recent Flux condition observation by ClusterControl. Null until the first observation run."
         # show-only flux fields
         gitops_sync_status: { type: string, nullable: true }
         gitops_source_repo: { type: string, nullable: true }
@@ -569,6 +607,13 @@ components:
         gitops_last_reconciled_at: { type: string, format: date-time, nullable: true }
         gitops_github_files_url: { type: string, nullable: true }
         publish_error: { type: string, nullable: true, description: "GitOps publish error from create/update" }
+        gitops_error:
+          type: string
+          nullable: true
+          description: >
+            Set by the cluster GitOps reconciler when the deployment's package_name
+            cannot be resolved. Cleared automatically on the next successful reconcile.
+            Present only on GET responses.
 
     DeploymentResource:
       type: object
@@ -618,7 +663,11 @@ components:
                 cluster_id: { type: string }
                 name: { type: string }
                 namespace: { type: string }
-                package_name: { type: string }
+                package_name:
+                  type: string
+                  description: >
+                    Must reference an existing package in the organization.
+                    Returns 422 if the named package does not exist.
                 package_version: { type: string }
                 environment_preset: { type: string }
                 values_override: { type: string }
@@ -681,89 +730,11 @@ components:
         manifest_files:
           type: object
           additionalProperties: { type: string }
-          nullable: true
-          description: "Manifest files ({ filename => YAML content })"
+          description: "Mustache manifest templates keyed by filename"
         inputs:
           type: array
           items:
             $ref: "#/components/schemas/TemplateInput"
-
-    TemplateCreateAttributes:
-      type: object
-      required: [slug, name]
-      properties:
-        slug: { type: string }
-        name: { type: string }
-        description: { type: string, nullable: true }
-        inputs:
-          type: array
-          items:
-            $ref: "#/components/schemas/TemplateInput"
-        manifest_files:
-          type: object
-          additionalProperties: { type: string }
-          nullable: true
-
-    TemplateCreateRequest:
-      type: object
-      required: [data]
-      properties:
-        data:
-          type: object
-          required: [type, attributes]
-          properties:
-            type: { type: string, enum: [templates] }
-            attributes:
-              $ref: "#/components/schemas/TemplateCreateAttributes"
-
-    TemplateUpdateAttributes:
-      type: object
-      description: "Mutable attributes only. slug, name, and derived are not mutable."
-      properties:
-        description: { type: string, nullable: true }
-        inputs:
-          type: array
-          items:
-            $ref: "#/components/schemas/TemplateInput"
-        manifest_files:
-          type: object
-          additionalProperties: { type: string }
-          nullable: true
-
-    TemplateUpdateRequest:
-      type: object
-      required: [data]
-      properties:
-        data:
-          type: object
-          required: [type, attributes]
-          properties:
-            type: { type: string, enum: [templates] }
-            attributes:
-              $ref: "#/components/schemas/TemplateUpdateAttributes"
-
-    TemplateUpdateMeta:
-      type: object
-      properties:
-        rerendered_deployments: { type: array, items: { type: string } }
-        rerender_errors: { type: array, items: { type: string } }
-
-    TemplateUpdateResource:
-      type: object
-      properties:
-        type: { type: string, enum: [templates] }
-        id: { type: string }
-        attributes:
-          $ref: "#/components/schemas/TemplateAttributes"
-        meta:
-          $ref: "#/components/schemas/TemplateUpdateMeta"
-
-    TemplateUpdateDocument:
-      type: object
-      required: [data]
-      properties:
-        data:
-          $ref: "#/components/schemas/TemplateUpdateResource"
 
     TemplateResource:
       type: object
@@ -858,10 +829,16 @@ components:
         reconciliation:
           type: object
           nullable: true
+          description: >
+            Present only when `flux_bootstrap_status` is `healthy`. Reflects the live Flux
+            reconciliation state, which is independent of controller pod availability. A
+            `health` of `not-ready` here means the Flux Kustomization is failing even though
+            the bootstrap status is `healthy`; the `kustomizations` array surfaces the
+            actionable error from `reason` and `message`.
           properties:
-            health: { type: string }
-            sources: { type: array, items: { type: object } }
-            kustomizations: { type: array, items: { type: object } }
+            health: { type: string, description: "Overall Kustomization reconciliation health (e.g. ready, not-ready)" }
+            sources: { type: array, items: { type: object }, description: "Flux GitRepository source statuses" }
+            kustomizations: { type: array, items: { type: object }, description: "Flux Kustomization statuses, each with reason and message fields" }
 
     FluxBootstrapResource:
       type: object
@@ -1505,7 +1482,12 @@ paths:
           $ref: "#/components/responses/NotFound"
     post:
       operationId: createClusterProvisioning
-      summary: Retry provisioning for a failed virtual cluster
+      summary: Retry a failed virtual cluster provisioning
+      description: >
+        Re-enqueues VirtualClusterProvisionJob for a virtual cluster whose status is `failed`.
+        Atomically sets status to `provisioning` and enqueues the job; concurrent duplicate
+        requests receive 422.  Returns 422 for clusters in any status other than `failed`.
+        Reuses the existing Deployment record; no infrastructure records are deleted or recreated.
       tags: [Clusters]
       responses:
         "202":
@@ -1545,6 +1527,20 @@ paths:
     post:
       operationId: createClusterFluxBootstrap
       summary: Trigger a Flux bootstrap for a virtual cluster
+      description: >
+        Enqueues `VirtualClusterFluxBootstrapJob`, which (re-)applies the Flux Kustomization CR
+        pointing at `./apps` so Flux reads the controller-generated deployment inventory.
+
+        The job is always enqueued when the current status is `pending`, `healthy`, or `failed` —
+        the controller resets `flux_bootstrap_status` to `pending` before enqueueing, so a stale
+        `healthy` flag does not block recovery.
+
+        Returns **422** only when `flux_bootstrap_status` is `installing` (the job is actively
+        running). Poll until status leaves `installing`, then retry.
+
+        This is the supported recovery operation for clusters whose Flux Kustomization is stale
+        or misconfigured. No kubectl patches, database edits, or GitOps repository changes are
+        required.
       tags: [Clusters]
       responses:
         "202":
@@ -1754,6 +1750,29 @@ paths:
         in: path
         required: true
         schema: { type: string }
+    patch:
+      operationId: updateProjectSecret
+      summary: Partially update a project secret (value never returned; blank value is rejected)
+      tags: [Secrets]
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              $ref: "#/components/schemas/SecretUpdateRequest"
+      responses:
+        "200":
+          description: Secret updated (value is not returned)
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/SecretDocument"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
     delete:
       operationId: deleteProjectSecret
       summary: Delete a project secret
@@ -2052,17 +2071,41 @@ paths:
           $ref: "#/components/responses/Unauthorized"
     post:
       operationId: createTemplate
-      summary: Create a deployment template
+      summary: Create a new deployment template
       tags: [Templates]
       requestBody:
         required: true
         content:
           application/vnd.api+json:
             schema:
-              $ref: "#/components/schemas/TemplateCreateRequest"
+              type: object
+              required: [data]
+              properties:
+                data:
+                  type: object
+                  required: [type, attributes]
+                  properties:
+                    type: { type: string, enum: [templates] }
+                    attributes:
+                      type: object
+                      required: [slug, name]
+                      properties:
+                        slug: { type: string, description: "Unique stable slug (render_mode identifier)" }
+                        name: { type: string }
+                        description: { type: string, nullable: true }
+                        inputs:
+                          type: array
+                          items:
+                            $ref: "#/components/schemas/TemplateInput"
+                        manifest_files:
+                          type: object
+                          additionalProperties: { type: string }
+                        derived:
+                          type: object
+                          additionalProperties: {}
       responses:
         "201":
-          description: Template created
+          description: Created template
           content:
             application/vnd.api+json:
               schema:
@@ -2095,21 +2138,55 @@ paths:
           $ref: "#/components/responses/NotFound"
     patch:
       operationId: updateTemplate
-      summary: Update a deployment template
+      summary: Update a template's inputs and/or manifest files
       tags: [Templates]
       requestBody:
         required: true
         content:
           application/vnd.api+json:
             schema:
-              $ref: "#/components/schemas/TemplateUpdateRequest"
+              type: object
+              required: [data]
+              properties:
+                data:
+                  type: object
+                  required: [type, attributes]
+                  properties:
+                    type: { type: string, enum: [templates] }
+                    attributes:
+                      type: object
+                      properties:
+                        description: { type: string, nullable: true }
+                        inputs:
+                          type: array
+                          items:
+                            $ref: "#/components/schemas/TemplateInput"
+                        manifest_files:
+                          type: object
+                          additionalProperties: { type: string }
       responses:
         "200":
-          description: Template updated
+          description: Updated template with re-render metadata
           content:
             application/vnd.api+json:
               schema:
-                $ref: "#/components/schemas/TemplateUpdateDocument"
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: "#/components/schemas/TemplateResource"
+                      - type: object
+                        properties:
+                          meta:
+                            type: object
+                            properties:
+                              rerendered_deployments:
+                                type: array
+                                items: { type: string }
+                              rerender_errors:
+                                type: array
+                                items: { type: string }
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
