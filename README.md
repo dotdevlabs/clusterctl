@@ -306,11 +306,14 @@ Secrets are scoped to a project. All secrets subcommands require `--project-id`.
 ```bash
 clusterctl secrets list --project-id <id>
 clusterctl secrets create --project-id <id> --secret-name <k8s-secret-name> --key <key> [--value <value>]
+clusterctl secrets update <id> --project-id <id> [--secret-name <k8s-secret-name>] [--key <key>] [--value <value>]
 clusterctl secrets delete --project-id <id> <secret-id>
 clusterctl secrets materialize --project-id <id>
 ```
 
 A ClusterControl project secret maps to a Kubernetes Secret entry: `--secret-name` is the target Kubernetes Secret name and `--key` is the key within its data map. Multiple entries with the same `--secret-name` and different `--key` values are grouped into a single Kubernetes Secret on `materialize`.
+
+`secrets update` changes an existing secret entry in place. At least one of `--secret-name`, `--key`, or `--value` is required; only supplied flags are sent and only those attributes are changed. The secret value is never printed in command output.
 
 ```bash
 # Add two keys to the same Kubernetes Secret
@@ -332,7 +335,7 @@ Common workflows included:
 - **Verify identity and service status** — auth whoami, status
 - **Provision a vCluster** — auth, create virtual cluster, check provisioning, health-check
 - **Create a package then a deployment** — register a Helm chart, browse releases, deploy
-- **Materialize a secret** — create a secret, list it, materialize to clusters
+- **Manage project secrets** — create, update, and materialize project secrets to target clusters
 - **Check deployment auto-block status and remove a pin** — get deployment (is_auto_blocked/is_pinned), unpin
 - **Review and manage package update policies** — list, create, get, update policies
 - **Trigger a deployment rollout and inspect update runs** — package-update apply, update-runs list/get, rollout
