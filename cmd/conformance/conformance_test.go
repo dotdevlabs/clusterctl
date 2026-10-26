@@ -73,6 +73,7 @@ var opCommandMap = map[string][]string{
 	"listProjectSecrets":             {"secrets", "list"},
 	"createProjectSecret":            {"secrets", "create"},
 	"deleteProjectSecret":            {"secrets", "delete"},
+	"updateProjectSecret":            {"secrets", "update"},
 	"createSecretMaterialization":    {"secrets", "materialize"},
 	"listPackages":                   {"packages", "list"},
 	"createPackage":                  {"packages", "create"},

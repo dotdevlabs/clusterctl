@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dotdevlabs/ctlkit/pkg/clierror"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
@@ -48,6 +49,14 @@ type createSecretAttrs struct {
 	Value                string `json:"value"`
 }
 
+// updateSecretAttrs mirrors SecretUpdateRequest.data.attributes; omitempty ensures only
+// explicitly changed flags appear in the PATCH body.
+type updateSecretAttrs struct {
+	KubernetesSecretName string `json:"kubernetes_secret_name,omitempty"`
+	Key                  string `json:"key,omitempty"`
+	Value                string `json:"value,omitempty"`
+}
+
 // secretMaterializationAttrs matches the SecretMaterializationAttributes in the spec.
 type secretMaterializationAttrs struct {
 	AppliedCount int    `json:"applied_count"`
@@ -79,6 +88,7 @@ func NewCommand() *cobra.Command {
 		newCreateCmd(&projectID),
 		newDeleteCmd(&projectID),
 		newMaterializeCmd(&projectID),
+		newUpdateCmd(&projectID),
 	)
 	return cmd
 }
@@ -197,4 +207,54 @@ func newMaterializeCmd(projectID *string) *cobra.Command {
 			return enc.Encode(res.Attributes)
 		},
 	}
+}
+
+func newUpdateCmd(projectID *string) *cobra.Command {
+	var secretName, key, value string
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update a secret entry in a project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if *projectID == "" {
+				return fmt.Errorf("--project-id is required")
+			}
+			client := ctxutil.ClientFrom(cmd.Context())
+			renderer := ctxutil.RendererFrom(cmd.Context())
+			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+
+			attrs := updateSecretAttrs{}
+			anyChanged := false
+			if cmd.Flags().Changed("secret-name") {
+				attrs.KubernetesSecretName = secretName
+				anyChanged = true
+			}
+			if cmd.Flags().Changed("key") {
+				attrs.Key = key
+				anyChanged = true
+			}
+			if cmd.Flags().Changed("value") {
+				attrs.Value = value
+				anyChanged = true
+			}
+			if !anyChanged {
+				return clierror.New(clierror.CodeUsage, "at least one flag required for update", "")
+			}
+			body := jsonapi.Wrap(secretResourceType, attrs)
+			if gf.DryRun {
+				return output.JSONTo(cmd.OutOrStdout(), body)
+			}
+			path := "/api/v1/projects/" + url.PathEscape(*projectID) + "/secrets/" + url.PathEscape(args[0])
+			res, err := jsonapi.PatchSingle[secretAttrs](cmd.Context(), client, path, body)
+			if err != nil {
+				return err
+			}
+			s := secretFromResource(res)
+			return renderer.Render(secretCols, [][]string{secretRow(s)}, httpclient.Envelope[Secret]{Data: s})
+		},
+	}
+	cmd.Flags().StringVar(&secretName, "secret-name", "", "Target Kubernetes Secret name (kubernetes_secret_name)")
+	cmd.Flags().StringVar(&key, "key", "", "Key within the Kubernetes Secret data map")
+	cmd.Flags().StringVar(&value, "value", "", "Secret value")
+	return cmd
 }

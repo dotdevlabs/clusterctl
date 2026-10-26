@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
@@ -429,5 +431,342 @@ func TestDelete_SendsOnlySingleDeleteRequest(t *testing.T) {
 	}
 	if !strings.Contains(mt.calls[0].URL.Path, "/secrets/s1") {
 		t.Errorf("expected /secrets/s1 in path, got: %s", mt.calls[0].URL.Path)
+	}
+}
+
+const updateSuccessResp = `{"data":{"type":"project_secrets","id":"s99","attributes":{"kubernetes_secret_name":"app-secrets","key":"MY_KEY"}}}`
+
+func extractBodyAttrs(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data object, got %T", body["data"])
+	}
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes object, got %T", data["attributes"])
+	}
+	return attrs
+}
+
+func setupUpdateSub(t *testing.T, mt http.RoundTripper, projectID string, jsonMode bool) (*cobra.Command, *bytes.Buffer) {
+	t.Helper()
+	ctx, out := buildCtx(t, mt, jsonMode)
+	parent := secrets.NewCommand()
+	if projectID != "" {
+		if err := parent.PersistentFlags().Set("project-id", projectID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	return sub, out
+}
+
+func TestUpdate_SecretNameOnly(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{{200, updateSuccessResp}}}
+	sub, out := setupUpdateSub(t, mt, "p1", true)
+	if err := sub.ParseFlags([]string{"--secret-name", "new-name"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	attrs := extractBodyAttrs(t, body)
+	if attrs["kubernetes_secret_name"] != "new-name" {
+		t.Errorf("expected kubernetes_secret_name=new-name, got %v", attrs["kubernetes_secret_name"])
+	}
+	if _, ok := attrs["key"]; ok {
+		t.Errorf("expected key absent when not provided, got %v", attrs["key"])
+	}
+	if _, ok := attrs["value"]; ok {
+		t.Errorf("expected value absent when not provided, got %v", attrs["value"])
+	}
+	if !strings.Contains(out.String(), "s99") {
+		t.Errorf("expected id in output, got: %s", out.String())
+	}
+}
+
+func TestUpdate_KeyOnly(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{{200, updateSuccessResp}}}
+	sub, _ := setupUpdateSub(t, mt, "p1", true)
+	if err := sub.ParseFlags([]string{"--key", "NEW_KEY"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	attrs := extractBodyAttrs(t, body)
+	if attrs["key"] != "NEW_KEY" {
+		t.Errorf("expected key=NEW_KEY, got %v", attrs["key"])
+	}
+	if _, ok := attrs["kubernetes_secret_name"]; ok {
+		t.Errorf("expected kubernetes_secret_name absent, got %v", attrs["kubernetes_secret_name"])
+	}
+}
+
+func TestUpdate_ValueOnly(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{{200, updateSuccessResp}}}
+	sub, _ := setupUpdateSub(t, mt, "p1", true)
+	if err := sub.ParseFlags([]string{"--value", "newval"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	attrs := extractBodyAttrs(t, body)
+	if attrs["value"] != "newval" {
+		t.Errorf("expected value=newval, got %v", attrs["value"])
+	}
+	if _, ok := attrs["key"]; ok {
+		t.Errorf("expected key absent, got %v", attrs["key"])
+	}
+}
+
+func TestUpdate_AllFlags(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{{200, updateSuccessResp}}}
+	sub, _ := setupUpdateSub(t, mt, "p1", true)
+	if err := sub.ParseFlags([]string{"--secret-name", "ns", "--key", "K", "--value", "V"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	attrs := extractBodyAttrs(t, body)
+	if attrs["kubernetes_secret_name"] != "ns" {
+		t.Errorf("kubernetes_secret_name=%v", attrs["kubernetes_secret_name"])
+	}
+	if attrs["key"] != "K" {
+		t.Errorf("key=%v", attrs["key"])
+	}
+	if attrs["value"] != "V" {
+		t.Errorf("value=%v", attrs["value"])
+	}
+}
+
+func TestUpdate_NoChangeFlag(t *testing.T) {
+	mt := &mockTransport{}
+	sub, _ := setupUpdateSub(t, mt, "p1", false)
+	err := sub.RunE(sub, []string{"s99"})
+	if err == nil {
+		t.Fatal("expected error when no change flags provided")
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls before error, got %d", len(mt.calls))
+	}
+}
+
+func TestUpdate_MissingProjectID(t *testing.T) {
+	mt := &mockTransport{}
+	sub, _ := setupUpdateSub(t, mt, "", false)
+	if err := sub.ParseFlags([]string{"--key", "K"}); err != nil {
+		t.Fatal(err)
+	}
+	err := sub.RunE(sub, []string{"s99"})
+	if err == nil {
+		t.Fatal("expected error when --project-id missing")
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls, got %d", len(mt.calls))
+	}
+}
+
+func TestUpdate_404(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{404, `{"errors":[{"status":"404","title":"Not Found","detail":"secret not found"}]}`},
+	}}
+	sub, _ := setupUpdateSub(t, mt, "p1", false)
+	if err := sub.ParseFlags([]string{"--key", "K"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"missing"}); err == nil {
+		t.Fatal("expected error for 404 response")
+	}
+}
+
+func TestUpdate_422(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{
+		{422, `{"errors":[{"status":"422","title":"Unprocessable Entity","detail":"value can't be blank"}]}`},
+	}}
+	sub, _ := setupUpdateSub(t, mt, "p1", false)
+	if err := sub.ParseFlags([]string{"--secret-name", "s"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err == nil {
+		t.Fatal("expected error for 422 response")
+	}
+}
+
+func TestUpdate_DryRun(t *testing.T) {
+	mt := &mockTransport{}
+	var out, errOut bytes.Buffer
+	client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: mt})
+	renderer := output.New(true, "", &out, &errOut)
+	ctx := context.Background()
+	ctx = ctxutil.WithClient(ctx, client)
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true, DryRun: true})
+
+	parent := secrets.NewCommand()
+	if err := parent.PersistentFlags().Set("project-id", "p1"); err != nil {
+		t.Fatal(err)
+	}
+	sub, _, err := parent.Find([]string{"update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.SetContext(ctx)
+	sub.SetOut(&out)
+	if err := sub.ParseFlags([]string{"--key", "DRY_KEY"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err != nil {
+		t.Fatalf("dry-run update: %v", err)
+	}
+	if len(mt.calls) != 0 {
+		t.Errorf("expected no HTTP calls in dry-run, got %d", len(mt.calls))
+	}
+	got := out.String()
+	if !strings.Contains(got, "project_secrets") {
+		t.Errorf("expected project_secrets type in dry-run output, got: %s", got)
+	}
+	if !strings.Contains(got, "DRY_KEY") {
+		t.Errorf("expected DRY_KEY in dry-run output, got: %s", got)
+	}
+}
+
+func TestUpdate_RequestBodyConformance(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{{200, updateSuccessResp}}}
+	sub, _ := setupUpdateSub(t, mt, "p1", true)
+	if err := sub.ParseFlags([]string{"--secret-name", "foo", "--key", "bar", "--value", "baz"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	raw, err := io.ReadAll(mt.calls[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	data, ok := body["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data object, got %T", body["data"])
+	}
+	if data["type"] != "project_secrets" {
+		t.Errorf("expected data.type=project_secrets, got %v", data["type"])
+	}
+	attrs, ok := data["attributes"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body.data.attributes object, got %T", data["attributes"])
+	}
+	if attrs["kubernetes_secret_name"] != "foo" {
+		t.Errorf("kubernetes_secret_name=%v", attrs["kubernetes_secret_name"])
+	}
+	if attrs["key"] != "bar" {
+		t.Errorf("key=%v", attrs["key"])
+	}
+	if attrs["value"] != "baz" {
+		t.Errorf("value=%v", attrs["value"])
+	}
+	for k := range attrs {
+		switch k {
+		case "kubernetes_secret_name", "key", "value":
+		default:
+			t.Errorf("unexpected attribute %q in request body", k)
+		}
+	}
+}
+
+func TestUpdate_ValueNotPrinted(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{{200, updateSuccessResp}}}
+	sub, out := setupUpdateSub(t, mt, "p1", true)
+	if err := sub.ParseFlags([]string{"--value", "super-secret-xyz"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if strings.Contains(out.String(), "super-secret-xyz") {
+		t.Errorf("secret value must not appear in output, got: %s", out.String())
+	}
+}
+
+func TestUpdate_UsesCorrectPath(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{{200, updateSuccessResp}}}
+	sub, _ := setupUpdateSub(t, mt, "proj-42", true)
+	if err := sub.ParseFlags([]string{"--key", "K"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"secret-7"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) == 0 {
+		t.Fatal("expected HTTP call")
+	}
+	got := mt.calls[0].URL.Path
+	if !strings.Contains(got, "/api/v1/projects/proj-42/secrets/secret-7") {
+		t.Errorf("expected /api/v1/projects/proj-42/secrets/secret-7 in path, got: %s", got)
+	}
+	if mt.calls[0].Method != http.MethodPatch {
+		t.Errorf("expected PATCH, got %s", mt.calls[0].Method)
+	}
+}
+
+func TestUpdate_SendsSingleRequest(t *testing.T) {
+	mt := &mockTransport{responses: []mockResponse{{200, updateSuccessResp}}}
+	sub, _ := setupUpdateSub(t, mt, "p1", true)
+	if err := sub.ParseFlags([]string{"--key", "K"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sub.RunE(sub, []string{"s99"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if len(mt.calls) != 1 {
+		t.Errorf("expected exactly 1 HTTP call (no GET pre-fetch), got %d", len(mt.calls))
+	}
+	if mt.calls[0].Method != http.MethodPatch {
+		t.Errorf("expected PATCH, got %s", mt.calls[0].Method)
 	}
 }
