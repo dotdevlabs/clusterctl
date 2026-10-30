@@ -30,6 +30,14 @@ import (
 
 // Execute builds and runs the clusterctl root command.
 func Execute() {
+	r := NewRootCmd()
+	if err := r.Execute(); err != nil {
+		os.Exit(clierror.HandleErr(err, os.Stderr))
+	}
+}
+
+// NewRootCmd builds the clusterctl root command with all subcommands wired.
+func NewRootCmd() *cobra.Command {
 	r := root.New(root.BuildConfig{
 		Product: "clusterctl",
 		Short:   "ClusterControl lifecycle management CLI",
@@ -107,9 +115,7 @@ func Execute() {
 		return nil
 	}
 
-	if err := r.Execute(); err != nil {
-		os.Exit(clierror.HandleErr(err, os.Stderr))
-	}
+	return r
 }
 
 func aiWorkflows() []airef.Workflow {

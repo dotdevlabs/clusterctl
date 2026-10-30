@@ -329,6 +329,9 @@ clusterctl secrets create --project-id <id> --secret-name cloudflared-token --ke
 ```bash
 # Print the full AI reference and common workflows
 clusterctl ai
+
+# Emit the machine-readable reference (commands, flags with required marked, workflows) as JSON
+clusterctl ai --json
 ```
 
 Common workflows included:
