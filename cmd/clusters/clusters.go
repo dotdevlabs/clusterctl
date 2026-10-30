@@ -13,6 +13,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
+	"github.com/dotdevlabs/clusterctl/internal/flagmeta"
 	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
@@ -271,6 +272,7 @@ func newCreateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Cluster name")
 	cmd.Flags().StringVar(&clusterType, "cluster-type", "", "Cluster type (virtual|imported)")
+	flagmeta.MustEnum(cmd, "cluster-type", flagmeta.ClusterTypes)
 	cmd.Flags().StringVar(&parentClusterID, "parent-cluster-id", "", "Parent cluster ID (for virtual clusters)")
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Kubeconfig YAML")
 	cmd.Flags().StringVar(&gitopsRepoURL, "gitops-repo-url", "", "GitOps repository URL")

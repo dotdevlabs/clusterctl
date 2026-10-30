@@ -334,6 +334,8 @@ clusterctl ai
 clusterctl ai --json
 ```
 
+Each flag in the JSON reference carries `enum` (the allowed values of closed-set flags such as `--cluster-type`, `--source-type`, `--scaling-mode`) and, for flags whose value is JSON (e.g. `--node-selector`, `--tolerations`, `--inputs`), a JSON Schema in `schema`.
+
 Common workflows included:
 - **Verify identity and service status** — auth whoami, status
 - **Provision a vCluster** — auth, create virtual cluster, check provisioning, health-check

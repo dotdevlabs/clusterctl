@@ -13,6 +13,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
+	"github.com/dotdevlabs/clusterctl/internal/flagmeta"
 	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
@@ -587,6 +588,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&valuesOverride, "values-override", "", "Values override (YAML/JSON string)")
 	cmd.Flags().StringVar(&environmentPreset, "environment-preset", "", "Environment preset name")
 	cmd.Flags().StringVar(&scalingMode, "scaling-mode", "", `Scaling mode (e.g. "hpa", "keda", "manual")`)
+	flagmeta.MustEnum(cmd, "scaling-mode", flagmeta.ScalingModes)
 	cmd.Flags().StringVar(&scalingProfile, "scaling-profile", "", "Scaling profile name")
 	cmd.Flags().StringVar(&placementPolicy, "placement-policy", "", "Pod placement policy name")
 	cmd.Flags().StringVar(&canaryInterval, "canary-interval", "", `Canary analysis interval (e.g. "1m")`)
@@ -595,9 +597,13 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&memoryRequest, "memory-request", "", `Memory resource request (e.g. "256Mi")`)
 	cmd.Flags().StringVar(&memoryLimit, "memory-limit", "", `Memory resource limit (e.g. "512Mi")`)
 	cmd.Flags().StringVar(&nodeSelectorJSON, "node-selector", "", `Node selector as a JSON object (e.g. '{"kubernetes.io/os":"linux"}')`)
+	flagmeta.MustSchema(cmd, "node-selector", flagmeta.StringMapSchema)
 	cmd.Flags().StringVar(&tolerationsJSON, "tolerations", "", `Tolerations as a JSON array (e.g. '[{"key":"foo","operator":"Equal","value":"bar","effect":"NoSchedule"}]')`)
+	flagmeta.MustSchema(cmd, "tolerations", flagmeta.TolerationsSchema)
 	cmd.Flags().StringVar(&templateExtraResourcesJSON, "template-extra-resources", "", "Extra template files as a JSON object mapping filename to YAML content")
+	flagmeta.MustSchema(cmd, "template-extra-resources", flagmeta.StringMapSchema)
 	cmd.Flags().StringVar(&templateValuesJSON, "template-values", "", `Template key-value inputs as a JSON object (e.g. '{"image_repository":"ghcr.io/foo/bar"}')`)
+	flagmeta.MustSchema(cmd, "template-values", flagmeta.AnyMapSchema)
 	cmd.Flags().BoolVar(&isAI, "is-ai", false, "Mark as an AI workload (enables AI-specific defaults)")
 	cmd.Flags().BoolVar(&canaryEnabled, "canary-enabled", false, "Enable canary rollout via Flagger")
 	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Minimum replica count")
@@ -838,6 +844,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&valuesOverride, "values-override", "", "Values override (YAML/JSON string)")
 	cmd.Flags().StringVar(&environmentPreset, "environment-preset", "", "Environment preset name")
 	cmd.Flags().StringVar(&scalingMode, "scaling-mode", "", `Scaling mode (e.g. "hpa", "keda", "manual")`)
+	flagmeta.MustEnum(cmd, "scaling-mode", flagmeta.ScalingModes)
 	cmd.Flags().StringVar(&scalingProfile, "scaling-profile", "", "Scaling profile name")
 	cmd.Flags().StringVar(&placementPolicy, "placement-policy", "", "Pod placement policy name")
 	cmd.Flags().StringVar(&canaryInterval, "canary-interval", "", `Canary analysis interval (e.g. "1m")`)
@@ -846,9 +853,13 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&memoryRequest, "memory-request", "", `Memory resource request (e.g. "256Mi")`)
 	cmd.Flags().StringVar(&memoryLimit, "memory-limit", "", `Memory resource limit (e.g. "512Mi")`)
 	cmd.Flags().StringVar(&nodeSelectorJSON, "node-selector", "", `Node selector as a JSON object (e.g. '{"kubernetes.io/os":"linux"}')`)
+	flagmeta.MustSchema(cmd, "node-selector", flagmeta.StringMapSchema)
 	cmd.Flags().StringVar(&tolerationsJSON, "tolerations", "", `Tolerations as a JSON array (e.g. '[{"key":"foo","operator":"Equal","value":"bar","effect":"NoSchedule"}]')`)
+	flagmeta.MustSchema(cmd, "tolerations", flagmeta.TolerationsSchema)
 	cmd.Flags().StringVar(&templateExtraResourcesJSON, "template-extra-resources", "", "Extra template files as a JSON object mapping filename to YAML content")
+	flagmeta.MustSchema(cmd, "template-extra-resources", flagmeta.StringMapSchema)
 	cmd.Flags().StringVar(&templateValuesJSON, "template-values", "", `Template key-value inputs as a JSON object (e.g. '{"image_repository":"ghcr.io/foo/bar"}')`)
+	flagmeta.MustSchema(cmd, "template-values", flagmeta.AnyMapSchema)
 	cmd.Flags().BoolVar(&isAI, "is-ai", false, "Mark as an AI workload (enables AI-specific defaults)")
 	cmd.Flags().BoolVar(&canaryEnabled, "canary-enabled", false, "Enable canary rollout via Flagger")
 	cmd.Flags().IntVar(&minReplicas, "min-replicas", 0, "Minimum replica count")

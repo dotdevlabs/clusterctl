@@ -14,6 +14,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
+	"github.com/dotdevlabs/clusterctl/internal/flagmeta"
 	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
@@ -300,6 +301,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Package name")
 	cmd.Flags().StringVar(&description, "description", "", "Package description")
 	cmd.Flags().StringVar(&sourceType, "source-type", "", "Source type (helm|git)")
+	flagmeta.MustEnum(cmd, "source-type", flagmeta.SourceTypes)
 	cmd.Flags().StringVar(&sourceURL, "source-url", "", "Source URL")
 	cmd.Flags().StringVar(&sourceBranch, "source-branch", "", "Source branch")
 	cmd.Flags().StringVar(&sourcePath, "source-path", "", "Source path")
@@ -405,6 +407,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Package name")
 	cmd.Flags().StringVar(&description, "description", "", "Package description")
 	cmd.Flags().StringVar(&sourceType, "source-type", "", "Source type")
+	flagmeta.MustEnum(cmd, "source-type", flagmeta.SourceTypes)
 	cmd.Flags().StringVar(&sourceURL, "source-url", "", "Source URL")
 	cmd.Flags().StringVar(&sourceBranch, "source-branch", "", "Source branch")
 	cmd.Flags().StringVar(&sourcePath, "source-path", "", "Source path")
