@@ -13,6 +13,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
+	"github.com/dotdevlabs/clusterctl/internal/flagmeta"
 	"github.com/dotdevlabs/clusterctl/internal/jsonapi"
 )
 
@@ -224,7 +225,9 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Template name (required)")
 	cmd.Flags().StringVar(&description, "description", "", "Template description")
 	cmd.Flags().StringVar(&inputsJSON, "inputs", "", "Inputs as JSON array or @file (e.g. '[{\"key\":\"image\",\"type\":\"string\",\"required\":true}]')")
+	flagmeta.MustSchema(cmd, "inputs", flagmeta.TemplateInputsSchema)
 	cmd.Flags().StringVar(&manifestFilesJSON, "manifest-files", "", "Manifest files as JSON object mapping filename to content, or @file")
+	flagmeta.MustSchema(cmd, "manifest-files", flagmeta.StringMapSchema)
 	if err := cmd.MarkFlagRequired("slug"); err != nil {
 		panic(err)
 	}
@@ -314,6 +317,8 @@ func newUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "New template description")
 	cmd.Flags().BoolVar(&clearDescription, "clear-description", false, "Set description to null")
 	cmd.Flags().StringVar(&inputsJSON, "inputs", "", "Inputs as JSON array or @file")
+	flagmeta.MustSchema(cmd, "inputs", flagmeta.TemplateInputsSchema)
 	cmd.Flags().StringVar(&manifestFilesJSON, "manifest-files", "", "Manifest files as JSON object or @file")
+	flagmeta.MustSchema(cmd, "manifest-files", flagmeta.StringMapSchema)
 	return cmd
 }
