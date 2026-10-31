@@ -11,10 +11,11 @@ import (
 // Closed value sets, shared by the commands and the tests.
 var (
 	ClusterTypes = []string{"virtual", "imported"}
-	SourceTypes  = []string{"helm", "git"}
-	// ScalingModes is advisory metadata: the flag help says "e.g." and the
-	// client does not validate the value.
-	ScalingModes = []string{"hpa", "keda", "manual"}
+	// SourceTypes and ScalingModes are the values the ClusterControl API
+	// accepts (see x-flag-enums in docs/api_spec.yaml). The client does not
+	// validate them; they are metadata for "clusterctl ai --json".
+	SourceTypes  = []string{"git", "oci", "helm"}
+	ScalingModes = []string{"fixed", "hpa"}
 )
 
 // JSON schemas of JSON-valued flags. They describe the JSON value; flags that
