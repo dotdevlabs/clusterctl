@@ -300,7 +300,7 @@ func newCreateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Package name")
 	cmd.Flags().StringVar(&description, "description", "", "Package description")
-	cmd.Flags().StringVar(&sourceType, "source-type", "", "Source type (helm|git)")
+	cmd.Flags().StringVar(&sourceType, "source-type", "", "Source type (git|oci|helm)")
 	flagmeta.MustEnum(cmd, "source-type", flagmeta.SourceTypes)
 	cmd.Flags().StringVar(&sourceURL, "source-url", "", "Source URL")
 	cmd.Flags().StringVar(&sourceBranch, "source-branch", "", "Source branch")

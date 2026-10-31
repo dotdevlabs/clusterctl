@@ -2839,3 +2839,11 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+# Local addition (additive; keeps scripts/check-api-spec-drift.sh green): the
+# values the ClusterControl API accepts for string fields whose schemas above
+# declare no enum. Checked by internal/flagmeta against the CLI flag enums.
+# Remove once upstream declares `enum` on these schema properties.
+x-flag-enums:
+  source_type: [git, oci, helm]
+  scaling_mode: [fixed, hpa]

@@ -132,7 +132,7 @@ clusterctl projects delete <id>
 ```bash
 clusterctl packages list
 clusterctl packages get <id>
-clusterctl packages create --name <name> [--description <desc>] [--source-type <helm|git>] \
+clusterctl packages create --name <name> [--description <desc>] [--source-type <git|oci|helm>] \
   [--source-url <url>] [--source-branch <branch>] [--source-path <path>] \
   [--source-chart <chart>] [--source-tag-pattern <pattern>] \
   [--tags <comma-list-or-json-array>] \
@@ -198,7 +198,7 @@ clusterctl deployments get <id>    # response includes is_auto_blocked and is_pi
 clusterctl deployments create --project-id <id> --name <name> --namespace <namespace> \
   --package-name <name> --package-version <ver> [--cluster-id <id>] \
   [--values-override <yaml>] [--environment-preset <name>] [--is-ai] \
-  [--scaling-mode <hpa|keda|manual>] [--scaling-profile <name>] \
+  [--scaling-mode <fixed|hpa>] [--scaling-profile <name>] \
   [--min-replicas <n>] [--max-replicas <n>] [--desired-replicas <n>] \
   [--cpu-target-utilization <pct>] [--memory-target-utilization <pct>] \
   [--cpu-request <qty>] [--cpu-limit <qty>] \
@@ -212,7 +212,7 @@ clusterctl deployments create --project-id <id> --name <name> --namespace <names
 clusterctl deployments update <id> [--project-id <id>] [--cluster-id <id>] [--name <name>] \
   [--namespace <namespace>] [--package-name <name>] [--package-version <ver>] \
   [--values-override <yaml>] [--environment-preset <name>] [--is-ai] \
-  [--scaling-mode <hpa|keda|manual>] [--scaling-profile <name>] \
+  [--scaling-mode <fixed|hpa>] [--scaling-profile <name>] \
   [--min-replicas <n>] [--max-replicas <n>] [--desired-replicas <n>] \
   [--cpu-target-utilization <pct>] [--memory-target-utilization <pct>] \
   [--cpu-request <qty>] [--cpu-limit <qty>] \

@@ -118,10 +118,10 @@ func TestAIFlagEnums(t *testing.T) {
 		want []string
 	}{
 		{[]string{"clusters", "create"}, "cluster-type", []string{"virtual", "imported"}},
-		{[]string{"packages", "create"}, "source-type", []string{"helm", "git"}},
-		{[]string{"packages", "update"}, "source-type", []string{"helm", "git"}},
-		{[]string{"deployments", "create"}, "scaling-mode", []string{"hpa", "keda", "manual"}},
-		{[]string{"deployments", "update"}, "scaling-mode", []string{"hpa", "keda", "manual"}},
+		{[]string{"packages", "create"}, "source-type", []string{"git", "oci", "helm"}},
+		{[]string{"packages", "update"}, "source-type", []string{"git", "oci", "helm"}},
+		{[]string{"deployments", "create"}, "scaling-mode", []string{"fixed", "hpa"}},
+		{[]string{"deployments", "update"}, "scaling-mode", []string{"fixed", "hpa"}},
 	}
 	for _, tc := range cases {
 		f := findFlag(t, ref, tc.flag, tc.path...)
