@@ -47,6 +47,12 @@ clusterctl auth login --name prod --url https://api.clustercontrol.co --token <t
 export CLUSTERCTL_TOKEN=<your-token>
 ```
 
+To point at a different ClusterControl server without a stored context (for example a local or staging instance), set `CLUSTERCTL_BASE_URL`:
+
+```bash
+export CLUSTERCTL_BASE_URL=https://staging.example.com
+```
+
 Named contexts are stored in `~/.config/atmt/clusterctl.yaml`. Switch between them with:
 
 ```bash
