@@ -43,11 +43,11 @@ Pre-built binaries for Linux, macOS (Intel + Apple Silicon), and Windows are ava
 # Store a named context with a bearer token
 clusterctl auth login --name prod --url https://api.clustercontrol.co --token <token>
 
-# Or set token directly via environment variable (uses default URL)
+# Or set token directly via environment variable (uses the default server, https://clustercontrol.co)
 export CLUSTERCTL_TOKEN=<your-token>
 ```
 
-To point at a different ClusterControl server without a stored context (for example a local or staging instance), set `CLUSTERCTL_BASE_URL`:
+The built-in server address is `https://clustercontrol.co`. To override it without a stored context (for example a local or staging instance), set `CLUSTERCTL_BASE_URL`:
 
 ```bash
 export CLUSTERCTL_BASE_URL=https://staging.example.com

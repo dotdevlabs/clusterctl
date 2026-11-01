@@ -36,9 +36,13 @@ func Execute() {
 	}
 }
 
-// NewRootCmd builds the clusterctl root command with all subcommands wired.
-func NewRootCmd() *cobra.Command {
-	r := root.New(root.BuildConfig{
+// DefaultBaseURL is the built-in ClusterControl server address. ctlkit resolves
+// the effective address (context, then CLUSTERCTL_BASE_URL, then this default).
+const DefaultBaseURL = "https://clustercontrol.co"
+
+// buildConfig returns the ctlkit root configuration for clusterctl.
+func buildConfig() root.BuildConfig {
+	return root.BuildConfig{
 		Product: "clusterctl",
 		Short:   "ClusterControl lifecycle management CLI",
 		Version: version.Current("clusterctl"),
@@ -56,9 +60,14 @@ func NewRootCmd() *cobra.Command {
 			status.NewCommand(),
 			templates.NewCommand(),
 		},
-		Workflows: aiWorkflows(),
-	})
+		Workflows:      aiWorkflows(),
+		DefaultBaseURL: DefaultBaseURL,
+	}
+}
 
+// NewRootCmd builds the clusterctl root command with all subcommands wired.
+func NewRootCmd() *cobra.Command {
+	r := root.New(buildConfig())
 	// Extend ctlkit's built-in "auth" command with the ClusterControl-specific
 	// "whoami" subcommand (GET /auth). ctlkit registers its "auth" command before
 	// product-specific commands, so Find returns it here.
@@ -70,12 +79,17 @@ func NewRootCmd() *cobra.Command {
 		ctxName, _ := cmd.Root().PersistentFlags().GetString("context")
 		jsonFlag, _ := cmd.Root().PersistentFlags().GetBool("json")
 		formatFlag, _ := cmd.Root().PersistentFlags().GetString("format")
+		tokenFlag, _ := cmd.Root().PersistentFlags().GetString("token")
 
 		productCfg, err := config.Load("clusterctl")
 		if err != nil {
 			return err
 		}
-		activeCtx, _, err := config.Resolve("clusterctl", productCfg, ctxName)
+		activeCtx, _, err := config.Resolve("clusterctl", productCfg, config.ResolveOptions{
+			Context:        ctxName,
+			Token:          tokenFlag,
+			DefaultBaseURL: DefaultBaseURL,
+		})
 		if err != nil {
 			return err
 		}
