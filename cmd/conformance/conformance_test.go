@@ -195,6 +195,83 @@ func extractAttrs(t *testing.T, body map[string]any) map[string]any {
 	return attrs
 }
 
+func TestClusterValuesContract(t *testing.T) {
+	data, err := os.ReadFile("../../docs/api_spec.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec map[string]any
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatal(err)
+	}
+	object := func(parent map[string]any, key string) map[string]any {
+		t.Helper()
+		value, ok := parent[key].(map[string]any)
+		if !ok {
+			t.Fatalf("%s must be an object, got %T", key, parent[key])
+		}
+		return value
+	}
+	schemas := object(object(spec, "components"), "schemas")
+	for _, name := range []string{"ClusterAttributes", "ClusterCreateRequest", "ClusterUpdateRequest"} {
+		schema := object(schemas, name)
+		if name != "ClusterAttributes" {
+			schema = object(object(object(object(schema, "properties"), "data"), "properties"), "attributes")
+		}
+		field := object(object(schema, "properties"), "vcluster_values")
+		if field["type"] != "object" || field["nullable"] != true || field["additionalProperties"] != true {
+			t.Fatalf("%s: %v", name, field)
+		}
+		if required, ok := schema["required"].([]any); ok {
+			for _, key := range required {
+				if key == "vcluster_values" {
+					t.Fatalf("%s requires values", name)
+				}
+			}
+		}
+	}
+	for _, operation := range []string{"create", "update", "get", "list"} {
+		t.Run(operation, func(t *testing.T) {
+			resource := `{"type":"clusters","id":"c1","attributes":{"vcluster_values":{"arbitrary":{"nested":[false,null]}}}}`
+			response := `{"data":` + resource + `}`
+			if operation == "list" {
+				response = `{"data":[` + resource + `]}`
+			}
+			mt := &conformanceMockTransport{responses: []conformanceMockResponse{{200, response}, {200, response}}}
+			var out, errOut strings.Builder
+			client := httpclient.NewWithTransport("https://example.com", "tok", &jsonapi.Transport{Wrapped: mt})
+			ctx := ctxutil.WithClient(context.Background(), client)
+			ctx = ctxutil.WithRenderer(ctx, output.New(true, "", &out, &errOut))
+			ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true})
+			cmd, _, err := buildRoot().Find([]string{"clusters", operation})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd.SetContext(ctx)
+			if operation == "create" || operation == "update" {
+				if err := cmd.ParseFlags([]string{"--vcluster-values", `{"arbitrary":{"nested":[false,null]}}`}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := cmd.RunE(cmd, []string{"c1"}); err != nil {
+				t.Fatal(err)
+			}
+			if operation == "create" || operation == "update" {
+				var body map[string]any
+				if err := json.NewDecoder(mt.calls[len(mt.calls)-1].Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := extractAttrs(t, body)["vcluster_values"].(map[string]any); !ok {
+					t.Fatal("request values not object")
+				}
+			}
+			if !strings.Contains(out.String(), `"vcluster_values": {`) || !strings.Contains(out.String(), `"arbitrary"`) {
+				t.Fatalf("response missing object: %s", out.String())
+			}
+		})
+	}
+}
+
 // conformanceMockTransport is a minimal RoundTripper for conformance assertions.
 type conformanceMockTransport struct {
 	responses []conformanceMockResponse

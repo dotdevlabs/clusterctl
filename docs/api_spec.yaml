@@ -282,6 +282,7 @@ components:
         kubeconfig_export_namespace: { type: string, nullable: true }
         cluster_issuer_name: { type: string, nullable: true }
         ingress_class_name: { type: string, nullable: true }
+        vcluster_values: { type: object, nullable: true, additionalProperties: true }
 
     ClusterResource:
       type: object
@@ -336,6 +337,7 @@ components:
                 kubeconfig_export_namespace: { type: string }
                 cluster_issuer_name: { type: string }
                 ingress_class_name: { type: string }
+                vcluster_values: { type: object, nullable: true, additionalProperties: true }
 
     ClusterUpdateRequest:
       type: object
@@ -353,6 +355,7 @@ components:
                 kubeconfig_export_namespace: { type: string }
                 cluster_issuer_name: { type: string }
                 ingress_class_name: { type: string }
+                vcluster_values: { type: object, nullable: true, additionalProperties: true }
                 gitops_repo_url: { type: string }
                 kubeconfig: { type: string }
 

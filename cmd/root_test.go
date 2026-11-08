@@ -95,6 +95,26 @@ func aiReference(t *testing.T) airef.Reference {
 	return ref
 }
 
+func TestAIVclusterValues(t *testing.T) {
+	ref := aiReference(t)
+	for _, operation := range []string{"create", "update"} {
+		flag := findFlag(t, ref, "vcluster-values", "clusters", operation)
+		var schema map[string]any
+		if err := json.Unmarshal(flag.Schema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(schema["type"], []any{"object", "null"}) {
+			t.Fatalf("schema = %s", flag.Schema)
+		}
+		if !strings.Contains(flag.Usage, "null clears") || !strings.Contains(flag.Usage, "omission preserves") {
+			t.Fatalf("usage = %s", flag.Usage)
+		}
+	}
+	if !strings.Contains(runAI(t, "ai"), "--vcluster-values") {
+		t.Fatal("AI reference missing flag")
+	}
+}
+
 func findFlag(t *testing.T, ref airef.Reference, flag string, path ...string) airef.FlagRef {
 	t.Helper()
 	c := findCommand(ref.Commands, path...)
