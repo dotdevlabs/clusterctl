@@ -454,6 +454,14 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+## Per-cluster vCluster Helm values
+
+Use `clusterctl clusters create --cluster-type virtual --vcluster-values '{"sync":{"toHost":{"networkPolicies":{"enabled":true}}}}'`
+to enable NetworkPolicy sync. `clusterctl clusters update <id> --vcluster-values '{"sync":{"toHost":{"networkPolicies":{"enabled":true}}}}'`
+updates the same values. The option accepts a JSON object, or `--vcluster-values null`
+to clear it. Omitting the option preserves existing values. `clusters get <id>` and
+`clusters list --json` show `vcluster_values`.
+
 ## License
 
 MIT

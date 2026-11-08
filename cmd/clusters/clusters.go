@@ -2,6 +2,7 @@
 package clusters
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -21,65 +22,68 @@ const clusterResourceType = "clusters"
 
 // Cluster is the API response shape for a cluster resource.
 type Cluster struct {
-	ID                        string `json:"id"`
-	Name                      string `json:"name"`
-	ClusterType               string `json:"cluster_type"`
-	ParentClusterID           string `json:"parent_cluster_id,omitempty"`
-	Namespace                 string `json:"namespace,omitempty"`
-	Status                    string `json:"status,omitempty"`
-	ErrorMessage              string `json:"error_message,omitempty"`
-	ProvisioningMessage       string `json:"provisioning_message,omitempty"`
-	ProvisioningStartedAt     string `json:"provisioning_started_at,omitempty"`
-	ProvisioningCompletedAt   string `json:"provisioning_completed_at,omitempty"`
-	FluxBootstrapStatus       string `json:"flux_bootstrap_status,omitempty"`
-	FluxBootstrapError        string `json:"flux_bootstrap_error,omitempty"`
-	FluxBootstrapStartedAt    string `json:"flux_bootstrap_started_at,omitempty"`
-	FluxBootstrapCompletedAt  string `json:"flux_bootstrap_completed_at,omitempty"`
-	GitopsRepoURL             string `json:"gitops_repo_url,omitempty"`
-	HealthStatus              string `json:"health_status,omitempty"`
-	HealthCheckError          string `json:"health_check_error,omitempty"`
-	LastHealthCheckAt         string `json:"last_health_check_at,omitempty"`
-	APIEndpoint               string `json:"api_endpoint,omitempty"`
-	PlatformBootstrapStatus   string `json:"platform_bootstrap_status,omitempty"`
-	PlatformBootstrapError    string `json:"platform_bootstrap_error,omitempty"`
-	K8sBaseHostname           string `json:"k8s_base_hostname,omitempty"`
-	KubeconfigExportNamespace string `json:"kubeconfig_export_namespace,omitempty"`
-	ClusterIssuerName         string `json:"cluster_issuer_name,omitempty"`
-	IngressClassName          string `json:"ingress_class_name,omitempty"`
-	CreatedAt                 string `json:"created_at,omitempty"`
+	VclusterValues            json.RawMessage `json:"vcluster_values"`
+	ID                        string          `json:"id"`
+	Name                      string          `json:"name"`
+	ClusterType               string          `json:"cluster_type"`
+	ParentClusterID           string          `json:"parent_cluster_id,omitempty"`
+	Namespace                 string          `json:"namespace,omitempty"`
+	Status                    string          `json:"status,omitempty"`
+	ErrorMessage              string          `json:"error_message,omitempty"`
+	ProvisioningMessage       string          `json:"provisioning_message,omitempty"`
+	ProvisioningStartedAt     string          `json:"provisioning_started_at,omitempty"`
+	ProvisioningCompletedAt   string          `json:"provisioning_completed_at,omitempty"`
+	FluxBootstrapStatus       string          `json:"flux_bootstrap_status,omitempty"`
+	FluxBootstrapError        string          `json:"flux_bootstrap_error,omitempty"`
+	FluxBootstrapStartedAt    string          `json:"flux_bootstrap_started_at,omitempty"`
+	FluxBootstrapCompletedAt  string          `json:"flux_bootstrap_completed_at,omitempty"`
+	GitopsRepoURL             string          `json:"gitops_repo_url,omitempty"`
+	HealthStatus              string          `json:"health_status,omitempty"`
+	HealthCheckError          string          `json:"health_check_error,omitempty"`
+	LastHealthCheckAt         string          `json:"last_health_check_at,omitempty"`
+	APIEndpoint               string          `json:"api_endpoint,omitempty"`
+	PlatformBootstrapStatus   string          `json:"platform_bootstrap_status,omitempty"`
+	PlatformBootstrapError    string          `json:"platform_bootstrap_error,omitempty"`
+	K8sBaseHostname           string          `json:"k8s_base_hostname,omitempty"`
+	KubeconfigExportNamespace string          `json:"kubeconfig_export_namespace,omitempty"`
+	ClusterIssuerName         string          `json:"cluster_issuer_name,omitempty"`
+	IngressClassName          string          `json:"ingress_class_name,omitempty"`
+	CreatedAt                 string          `json:"created_at,omitempty"`
 }
 
 type clusterAttrs struct {
-	Name                      string `json:"name"`
-	ClusterType               string `json:"cluster_type"`
-	ParentClusterID           string `json:"parent_cluster_id,omitempty"`
-	Namespace                 string `json:"namespace,omitempty"`
-	Status                    string `json:"status,omitempty"`
-	ErrorMessage              string `json:"error_message,omitempty"`
-	ProvisioningMessage       string `json:"provisioning_message,omitempty"`
-	ProvisioningStartedAt     string `json:"provisioning_started_at,omitempty"`
-	ProvisioningCompletedAt   string `json:"provisioning_completed_at,omitempty"`
-	FluxBootstrapStatus       string `json:"flux_bootstrap_status,omitempty"`
-	FluxBootstrapError        string `json:"flux_bootstrap_error,omitempty"`
-	FluxBootstrapStartedAt    string `json:"flux_bootstrap_started_at,omitempty"`
-	FluxBootstrapCompletedAt  string `json:"flux_bootstrap_completed_at,omitempty"`
-	GitopsRepoURL             string `json:"gitops_repo_url,omitempty"`
-	HealthStatus              string `json:"health_status,omitempty"`
-	HealthCheckError          string `json:"health_check_error,omitempty"`
-	LastHealthCheckAt         string `json:"last_health_check_at,omitempty"`
-	APIEndpoint               string `json:"api_endpoint,omitempty"`
-	PlatformBootstrapStatus   string `json:"platform_bootstrap_status,omitempty"`
-	PlatformBootstrapError    string `json:"platform_bootstrap_error,omitempty"`
-	K8sBaseHostname           string `json:"k8s_base_hostname,omitempty"`
-	KubeconfigExportNamespace string `json:"kubeconfig_export_namespace,omitempty"`
-	ClusterIssuerName         string `json:"cluster_issuer_name,omitempty"`
-	IngressClassName          string `json:"ingress_class_name,omitempty"`
-	CreatedAt                 string `json:"created_at,omitempty"`
+	VclusterValues            json.RawMessage `json:"vcluster_values"`
+	Name                      string          `json:"name"`
+	ClusterType               string          `json:"cluster_type"`
+	ParentClusterID           string          `json:"parent_cluster_id,omitempty"`
+	Namespace                 string          `json:"namespace,omitempty"`
+	Status                    string          `json:"status,omitempty"`
+	ErrorMessage              string          `json:"error_message,omitempty"`
+	ProvisioningMessage       string          `json:"provisioning_message,omitempty"`
+	ProvisioningStartedAt     string          `json:"provisioning_started_at,omitempty"`
+	ProvisioningCompletedAt   string          `json:"provisioning_completed_at,omitempty"`
+	FluxBootstrapStatus       string          `json:"flux_bootstrap_status,omitempty"`
+	FluxBootstrapError        string          `json:"flux_bootstrap_error,omitempty"`
+	FluxBootstrapStartedAt    string          `json:"flux_bootstrap_started_at,omitempty"`
+	FluxBootstrapCompletedAt  string          `json:"flux_bootstrap_completed_at,omitempty"`
+	GitopsRepoURL             string          `json:"gitops_repo_url,omitempty"`
+	HealthStatus              string          `json:"health_status,omitempty"`
+	HealthCheckError          string          `json:"health_check_error,omitempty"`
+	LastHealthCheckAt         string          `json:"last_health_check_at,omitempty"`
+	APIEndpoint               string          `json:"api_endpoint,omitempty"`
+	PlatformBootstrapStatus   string          `json:"platform_bootstrap_status,omitempty"`
+	PlatformBootstrapError    string          `json:"platform_bootstrap_error,omitempty"`
+	K8sBaseHostname           string          `json:"k8s_base_hostname,omitempty"`
+	KubeconfigExportNamespace string          `json:"kubeconfig_export_namespace,omitempty"`
+	ClusterIssuerName         string          `json:"cluster_issuer_name,omitempty"`
+	IngressClassName          string          `json:"ingress_class_name,omitempty"`
+	CreatedAt                 string          `json:"created_at,omitempty"`
 }
 
 func clusterFromResource(r httpclient.Resource[clusterAttrs]) Cluster {
 	a := r.Attributes
 	return Cluster{
+		VclusterValues:            a.VclusterValues,
 		ID:                        r.ID,
 		Name:                      a.Name,
 		ClusterType:               a.ClusterType,
@@ -111,25 +115,27 @@ func clusterFromResource(r httpclient.Resource[clusterAttrs]) Cluster {
 
 // createClusterAttrs matches ClusterCreateRequest.data.attributes in the spec.
 type createClusterAttrs struct {
-	ClusterType               string `json:"cluster_type"`
-	Name                      string `json:"name,omitempty"`
-	ParentClusterID           string `json:"parent_cluster_id,omitempty"`
-	Kubeconfig                string `json:"kubeconfig,omitempty"`
-	GitopsRepoURL             string `json:"gitops_repo_url,omitempty"`
-	K8sBaseHostname           string `json:"k8s_base_hostname,omitempty"`
-	KubeconfigExportNamespace string `json:"kubeconfig_export_namespace,omitempty"`
-	ClusterIssuerName         string `json:"cluster_issuer_name,omitempty"`
-	IngressClassName          string `json:"ingress_class_name,omitempty"`
+	VclusterValues            json.RawMessage `json:"vcluster_values,omitempty"`
+	ClusterType               string          `json:"cluster_type"`
+	Name                      string          `json:"name,omitempty"`
+	ParentClusterID           string          `json:"parent_cluster_id,omitempty"`
+	Kubeconfig                string          `json:"kubeconfig,omitempty"`
+	GitopsRepoURL             string          `json:"gitops_repo_url,omitempty"`
+	K8sBaseHostname           string          `json:"k8s_base_hostname,omitempty"`
+	KubeconfigExportNamespace string          `json:"kubeconfig_export_namespace,omitempty"`
+	ClusterIssuerName         string          `json:"cluster_issuer_name,omitempty"`
+	IngressClassName          string          `json:"ingress_class_name,omitempty"`
 }
 
 // updateClusterAttrs matches ClusterUpdateRequest.data.attributes in the spec.
 type updateClusterAttrs struct {
-	K8sBaseHostname           string `json:"k8s_base_hostname,omitempty"`
-	KubeconfigExportNamespace string `json:"kubeconfig_export_namespace,omitempty"`
-	ClusterIssuerName         string `json:"cluster_issuer_name,omitempty"`
-	IngressClassName          string `json:"ingress_class_name,omitempty"`
-	GitopsRepoURL             string `json:"gitops_repo_url,omitempty"`
-	Kubeconfig                string `json:"kubeconfig,omitempty"`
+	VclusterValues            json.RawMessage `json:"vcluster_values,omitempty"`
+	K8sBaseHostname           string          `json:"k8s_base_hostname,omitempty"`
+	KubeconfigExportNamespace string          `json:"kubeconfig_export_namespace,omitempty"`
+	ClusterIssuerName         string          `json:"cluster_issuer_name,omitempty"`
+	IngressClassName          string          `json:"ingress_class_name,omitempty"`
+	GitopsRepoURL             string          `json:"gitops_repo_url,omitempty"`
+	Kubeconfig                string          `json:"kubeconfig,omitempty"`
 }
 
 // healthCheckAttrs matches HealthCheckResource.attributes in the spec.
@@ -231,12 +237,21 @@ func newGetCmd() *cobra.Command {
 				return err
 			}
 			c := clusterFromResource(res.Resource)
-			return renderer.Render(clusterCols, [][]string{clusterRow(c)}, httpclient.Envelope[Cluster]{Data: c})
+			cols := append(append([]output.Column{}, clusterCols...), output.Column{Header: "VCLUSTER VALUES"})
+			values := bytes.NewBuffer(nil)
+			if c.VclusterValues == nil {
+				c.VclusterValues = json.RawMessage("null")
+			}
+			if err := json.Compact(values, c.VclusterValues); err != nil {
+				return err
+			}
+			return renderer.Render(cols, [][]string{append(clusterRow(c), values.String())}, httpclient.Envelope[Cluster]{Data: c})
 		},
 	}
 }
 
 func newCreateCmd() *cobra.Command {
+	var vclusterValues string
 	var name, clusterType, parentClusterID string
 	var kubeconfig, gitopsRepoURL, k8sBaseHostname string
 	var kubeconfigExportNamespace, clusterIssuerName, ingressClassName string
@@ -247,8 +262,13 @@ func newCreateCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(cmd.Context())
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
+			values, err := parseVclusterValues(cmd, vclusterValues)
+			if err != nil {
+				return err
+			}
 
 			body := jsonapi.Wrap(clusterResourceType, createClusterAttrs{
+				VclusterValues:            values,
 				ClusterType:               clusterType,
 				Name:                      name,
 				ParentClusterID:           parentClusterID,
@@ -271,6 +291,7 @@ func newCreateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "Cluster name")
+	addVclusterValuesFlag(cmd, &vclusterValues)
 	cmd.Flags().StringVar(&clusterType, "cluster-type", "", "Cluster type (virtual|imported)")
 	flagmeta.MustEnum(cmd, "cluster-type", flagmeta.ClusterTypes)
 	cmd.Flags().StringVar(&parentClusterID, "parent-cluster-id", "", "Parent cluster ID (for virtual clusters)")
@@ -287,6 +308,7 @@ func newCreateCmd() *cobra.Command {
 }
 
 func newUpdateCmd() *cobra.Command {
+	var vclusterValues string
 	var k8sBaseHostname, kubeconfigExportNamespace, clusterIssuerName string
 	var ingressClassName, gitopsRepoURL, kubeconfig string
 	cmd := &cobra.Command{
@@ -298,8 +320,12 @@ func newUpdateCmd() *cobra.Command {
 			renderer := ctxutil.RendererFrom(cmd.Context())
 			gf := ctxutil.GlobalFlagsFrom(cmd.Context())
 
-			attrs := updateClusterAttrs{}
-			anyChanged := false
+			values, err := parseVclusterValues(cmd, vclusterValues)
+			if err != nil {
+				return err
+			}
+			attrs := updateClusterAttrs{VclusterValues: values}
+			anyChanged := cmd.Flags().Changed("vcluster-values")
 			if cmd.Flags().Changed("k8s-base-hostname") {
 				attrs.K8sBaseHostname = k8sBaseHostname
 				anyChanged = true
@@ -346,12 +372,29 @@ func newUpdateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&k8sBaseHostname, "k8s-base-hostname", "", "Kubernetes base hostname")
+	addVclusterValuesFlag(cmd, &vclusterValues)
 	cmd.Flags().StringVar(&kubeconfigExportNamespace, "kubeconfig-export-namespace", "", "Namespace for kubeconfig export")
 	cmd.Flags().StringVar(&clusterIssuerName, "cluster-issuer-name", "", "Cluster issuer name")
 	cmd.Flags().StringVar(&ingressClassName, "ingress-class-name", "", "Ingress class name")
 	cmd.Flags().StringVar(&gitopsRepoURL, "gitops-repo-url", "", "GitOps repository URL")
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Kubeconfig YAML")
 	return cmd
+}
+
+func addVclusterValuesFlag(cmd *cobra.Command, value *string) {
+	cmd.Flags().StringVar(value, "vcluster-values", "", "vCluster Helm values as a JSON object; null clears values; omission preserves existing values")
+	flagmeta.MustSchema(cmd, "vcluster-values", `{"type":["object","null"],"additionalProperties":true}`)
+}
+
+func parseVclusterValues(cmd *cobra.Command, value string) (json.RawMessage, error) {
+	if !cmd.Flags().Changed("vcluster-values") {
+		return nil, nil
+	}
+	raw := bytes.TrimSpace([]byte(value))
+	if !json.Valid(raw) || (raw[0] != '{' && !bytes.Equal(raw, []byte("null"))) {
+		return nil, clierror.New(clierror.CodeUsage, "--vcluster-values must be a valid JSON object or null", "")
+	}
+	return json.RawMessage(raw), nil
 }
 
 func newDeleteCmd() *cobra.Command {

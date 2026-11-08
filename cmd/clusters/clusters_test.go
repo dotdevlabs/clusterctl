@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -65,6 +66,211 @@ func TestNewCommand(t *testing.T) {
 	}
 	if cmd.Use != "clusters" {
 		t.Errorf("expected Use=clusters, got %q", cmd.Use)
+	}
+}
+
+func TestVclusterValuesRequests(t *testing.T) {
+	for _, operation := range []string{"create", "update"} {
+		for _, value := range []string{"absent", "{}", " null ", `{"sync":{"enabled":false,"nested":null,"items":[1,true]},"large":9007199254740993}`} {
+			t.Run(operation+value, func(t *testing.T) {
+				response := `{"data":{"type":"clusters","id":"c1","attributes":{},"links":{"self":"/api/v1/clusters/canonical"}}}`
+				mt := &mockTransport{responses: []mockResponse{{200, response}, {200, response}}}
+				ctx, _ := buildCtx(t, mt, true)
+				cmd, _, err := clusters.NewCommand().Find([]string{operation})
+				if err != nil {
+					t.Fatal(err)
+				}
+				cmd.SetContext(ctx)
+				flags := []string{}
+				args := []string{}
+				if operation == "create" {
+					flags = append(flags, "--cluster-type", "virtual")
+				} else {
+					args = []string{"c1"}
+					if value == "absent" {
+						flags = append(flags, "--ingress-class-name", "nginx")
+					}
+				}
+				if value != "absent" {
+					flags = append(flags, "--vcluster-values", value)
+				}
+				if err := cmd.ParseFlags(flags); err != nil {
+					t.Fatal(err)
+				}
+				if err := cmd.RunE(cmd, args); err != nil {
+					t.Fatal(err)
+				}
+				wantCalls, method := 1, http.MethodPost
+				if operation == "update" {
+					wantCalls, method = 2, http.MethodPatch
+				}
+				if len(mt.calls) != wantCalls {
+					t.Fatalf("calls = %d", len(mt.calls))
+				}
+				r := mt.calls[len(mt.calls)-1]
+				if r.Method != method {
+					t.Fatalf("method = %s", r.Method)
+				}
+				if operation == "update" && r.URL.Path != "/api/v1/clusters/canonical" {
+					t.Fatalf("path = %s", r.URL.Path)
+				}
+				var body struct {
+					Data struct {
+						Type       string                     `json:"type"`
+						Attributes map[string]json.RawMessage `json:"attributes"`
+					} `json:"data"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				if body.Data.Type != "clusters" {
+					t.Fatal("missing resource type")
+				}
+				got, present := body.Data.Attributes["vcluster_values"]
+				if value == "absent" {
+					if present {
+						t.Fatal("unexpected attribute")
+					}
+					return
+				}
+				if string(got) != strings.TrimSpace(value) {
+					t.Fatalf("values = %s, want %s", got, value)
+				}
+			})
+		}
+	}
+}
+
+func TestVclusterValuesInvalid(t *testing.T) {
+	for _, operation := range []string{"create", "update"} {
+		for _, value := range []string{"", "{", "[]", `"text"`, "1", "true", "{} {}", "null true"} {
+			t.Run(operation+value, func(t *testing.T) {
+				mt := &mockTransport{}
+				ctx, _ := buildCtx(t, mt, true)
+				cmd, _, err := clusters.NewCommand().Find([]string{operation})
+				if err != nil {
+					t.Fatal(err)
+				}
+				cmd.SetContext(ctx)
+				if err := cmd.ParseFlags([]string{"--vcluster-values", value}); err != nil {
+					t.Fatal(err)
+				}
+				err = cmd.RunE(cmd, []string{"c1"})
+				if err == nil || !strings.Contains(err.Error(), "--vcluster-values") {
+					t.Fatalf("error = %v", err)
+				}
+				if len(mt.calls) != 0 {
+					t.Fatal("invalid input made a request")
+				}
+			})
+		}
+	}
+}
+
+func TestVclusterValuesDryRun(t *testing.T) {
+	for _, operation := range []string{"create", "update"} {
+		for _, value := range []string{"absent", "{}", "null", `{"large":9007199254740993}`} {
+			t.Run(operation+value, func(t *testing.T) {
+				mt := &mockTransport{}
+				ctx, _ := buildCtx(t, mt, true)
+				ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+				cmd, _, err := clusters.NewCommand().Find([]string{operation})
+				if err != nil {
+					t.Fatal(err)
+				}
+				cmd.SetContext(ctx)
+				var out bytes.Buffer
+				cmd.SetOut(&out)
+				flags := []string{"--ingress-class-name", "nginx"}
+				if value != "absent" {
+					flags = append(flags, "--vcluster-values", value)
+				}
+				if err := cmd.ParseFlags(flags); err != nil {
+					t.Fatal(err)
+				}
+				if err := cmd.RunE(cmd, []string{"c1"}); err != nil {
+					t.Fatal(err)
+				}
+				var body struct {
+					Data struct {
+						Attributes map[string]json.RawMessage `json:"attributes"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				got, present := body.Data.Attributes["vcluster_values"]
+				if value == "absent" {
+					if present {
+						t.Fatal("unexpected values")
+					}
+				} else {
+					var compact bytes.Buffer
+					if err := json.Compact(&compact, got); err != nil {
+						t.Fatal(err)
+					}
+					if compact.String() != value {
+						t.Fatalf("values = %s", compact.String())
+					}
+				}
+				if len(mt.calls) != 0 {
+					t.Fatal("dry run made request")
+				}
+			})
+		}
+	}
+}
+
+func TestVclusterValuesRendering(t *testing.T) {
+	for _, operation := range []string{"get", "list"} {
+		for _, value := range []string{"{}", "null", `{"large":9007199254740993}`} {
+			for _, jsonMode := range []bool{true, false} {
+				t.Run(operation+value+strconv.FormatBool(jsonMode), func(t *testing.T) {
+					resource := `{"type":"clusters","id":"c1","attributes":{"vcluster_values":` + value + `}}`
+					data := resource
+					if operation == "list" {
+						data = "[" + resource + "]"
+					}
+					mt := &mockTransport{responses: []mockResponse{{200, `{"data":` + data + `}`}}}
+					ctx, out := buildCtx(t, mt, jsonMode)
+					cmd, _, err := clusters.NewCommand().Find([]string{operation})
+					if err != nil {
+						t.Fatal(err)
+					}
+					cmd.SetContext(ctx)
+					if err := cmd.RunE(cmd, []string{"c1"}); err != nil {
+						t.Fatal(err)
+					}
+					if jsonMode {
+						var body struct {
+							Data json.RawMessage `json:"data"`
+						}
+						if err := json.Unmarshal(out.Bytes(), &body); err != nil {
+							t.Fatal(err)
+						}
+						var attrs map[string]json.RawMessage
+						if operation == "list" {
+							var items []map[string]json.RawMessage
+							if err := json.Unmarshal(body.Data, &items); err != nil {
+								t.Fatal(err)
+							}
+							attrs = items[0]
+						} else if err := json.Unmarshal(body.Data, &attrs); err != nil {
+							t.Fatal(err)
+						}
+						var compact bytes.Buffer
+						if err := json.Compact(&compact, attrs["vcluster_values"]); err != nil {
+							t.Fatal(err)
+						}
+						if compact.String() != value {
+							t.Fatalf("values = %s", compact.String())
+						}
+					} else if operation == "get" && !strings.Contains(out.String(), value) {
+						t.Fatalf("output = %s", out.String())
+					}
+				})
+			}
+		}
 	}
 }
 
